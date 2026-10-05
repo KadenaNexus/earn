@@ -1,0 +1,44 @@
+services:
+  chainweb:
+    image: ghcr.io/kadena-io/chainweb-node/ubuntu@sha256:e98d6b7ccf203371eeee9fcba8b52ef59b884d8325ae7ce9fb23dc0c23ca1c24
+    platform: linux/amd64
+    restart: unless-stopped
+    entrypoint: /chainweb/chainweb-node
+    command:
+      - --config-file=/chainweb/devnet.yaml
+      - --p2p-certificate-chain-file=/chainweb/bootstrap.cert.pem
+      - --p2p-certificate-key-file=/chainweb/bootstrap.key.pem
+      - --p2p-hostname=chainweb
+      - --known-peer-info=YNo7pXthYQ9RQKv1bbpQf2R5LcLYA3ppx2BL2Hf8fIM@chainweb:1789
+      - --bootstrap-reachability=1
+      - --cluster-id=kadena-earn-local
+      - --enable-mining-coordination
+      - --mining-public-key=f89ef46927f506c70b6a58fd322450a936311dc6ac91f4ec3d8ef949608dbf1f
+      - --allowReadsInLocal
+      - --database-directory=/chainweb/db
+      - --disable-pow
+      - --log-level=warn
+    ports: ['127.0.0.1:8080:1848']
+    volumes:
+      - ./deploy/devnet/chainweb.yaml:/chainweb/devnet.yaml:ro
+      - ./deploy/devnet/bootstrap.cert.pem:/chainweb/bootstrap.cert.pem:ro
+      - ./deploy/devnet/bootstrap.key.pem:/chainweb/bootstrap.key.pem:ro
+      - devnet:/chainweb/db
+    environment:
+      DISABLE_POW_VALIDATION: '1'
+  miner:
+    image: ghcr.io/kadena-io/chainweb-mining-client@sha256:2ee24d37964a12f54e29b727d2f786d6de67ce0e852f3f26ed487a3ad2708998
+    platform: linux/amd64
+    restart: unless-stopped
+    entrypoint: /chainweb-mining-client/chainweb-mining-client
+    command:
+      - --public-key=f89ef46927f506c70b6a58fd322450a936311dc6ac91f4ec3d8ef949608dbf1f
+      - --node=chainweb:1848
+      - --worker=constant-delay
+      - --thread-count=1
+      - --log-level=warn
+      - --no-tls
+      - --constant-delay-block-time=1
+    depends_on: [chainweb]
+volumes:
+  devnet:

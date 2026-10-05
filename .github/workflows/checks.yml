@@ -1,0 +1,32 @@
+name: Checks
+on: [push, pull_request]
+jobs:
+  backend-and-contract:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: kadena_earn
+          POSTGRES_PASSWORD: local_test_only
+          POSTGRES_DB: kadena_earn
+        ports: ['55432:5432']
+        options: >-
+          --health-cmd "pg_isready -U kadena_earn"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      TEST_DATABASE_URL: postgres://kadena_earn:local_test_only@127.0.0.1:55432/kadena_earn
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - name: Install pinned Pact 5 interpreter
+        run: |
+          mkdir -p .local
+          curl -fsSL https://github.com/kadena-io/pact-5/releases/download/5.4/pact-5.4-linux-x64.tar.gz -o .local/pact.tgz
+          tar xzf .local/pact.tgz -C .local
+      - run: npm run test:pact

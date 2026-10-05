@@ -1,0 +1,11 @@
+import { mkdir, writeFile } from 'node:fs/promises';
+import { config } from '../src/config.js';
+import { Chain } from '../src/pact.js';
+import { deploymentPlan } from '../src/deployment.js';
+const c=config(),plan=await deploymentPlan(c,new Chain(c));
+const {source,...artifact}=plan;
+const dir=new URL('../output/contract/',import.meta.url);await mkdir(dir,{recursive:true});
+await writeFile(new URL('deploy-command.json',dir),JSON.stringify(artifact,null,2));
+await writeFile(new URL('escrow.pact',dir),source);
+console.log(`Prepared ${plan.module}. Nothing was signed or broadcast. Set PACT_MODULE=${plan.module} after deployment confirms.`);
+if(c.network==='mainnet01'&&!c.reviewed)console.log('Review is pending. Do not sign or broadcast this deployment until review is complete.');

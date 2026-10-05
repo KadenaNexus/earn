@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kadena Earn</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#" aria-label="Kadena Earn home">
+      <svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><rect width="30" height="30" rx="8" fill="var(--mint)"/><path d="M9 7v16M9 15l9-8M9 15l9 8" stroke="var(--mint-ink)" stroke-width="3.2" stroke-linecap="round" fill="none"/></svg>
+      Kadena <small>Earn</small>
+    </a>
+    <nav class="primary" aria-label="Primary">
+      <button data-go="explore" aria-current="page">Explore tasks</button>
+      <button data-go="mine">My tasks</button>
+      <button data-go="board">Leaderboard</button>
+      <button data-go="done">Completed work</button>
+      <button data-go="create" hidden>Create task</button>
+      <button data-go="admin" hidden>Admin</button>
+    </nav>
+    <div class="me">
+      
+      <button class="wallet" id="walletBtn">Connect Ecko</button>
+      <button class="theme-btn" id="themeBtn" aria-label="Toggle light or dark theme">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+<p class="note" id="networkLabel"></p>
+
+  <!-- EXPLORE -->
+  <section class="view on" id="v-explore" aria-labelledby="h-explore">
+    <div class="hero">
+      <div>
+        <h1 id="h-explore">Do something useful for Kadena. Get paid in KDA.</h1>
+        <p>Test new apps, fix what's broken, explain what's new. Every task is funded in escrow before it goes live, so an approved submission always pays.</p>
+        <div class="mine">
+          <div><span>You've earned</span><b class="kda lg" id="heroEarned">0</b></div>
+          <div><span>In review</span><b class="kda lg" id="heroPending">0</b></div>
+          <div><span>Open rewards right now</span><b class="kda lg" id="openRewards">0</b></div>
+        </div>
+      </div>
+      <aside class="feed" aria-label="Recent payouts">
+        <h2>Recent payouts <small>Confirmed on Chainweb</small></h2>
+        <ul id="feed"></ul>
+      </aside>
+    </div>
+
+    
+    <div class="bar">
+      <div class="chips" role="group" aria-label="Filter by category" id="chips"></div>
+      <div class="search">
+        <input type="search" id="q" placeholder="Search tasks" aria-label="Search tasks">
+        <select id="sort" aria-label="Sort tasks">
+          <option value="new">Newest</option>
+          <option value="reward">Highest reward</option>
+          <option value="time">Shortest time</option>
+          <option value="ending">Ending soon</option>
+        </select>
+      </div>
+    </div>
+    <div class="grid" id="grid"></div>
+
+    
+  </section>
+
+  <!-- MY TASKS -->
+  <section class="view" id="v-mine" aria-labelledby="h-mine">
+    <div class="pagehead">
+      <div><h1 id="h-mine">My tasks and rewards</h1><p>Every payout links to its transaction on Chainweb.</p></div>
+    </div>
+    <div class="totals">
+      <div><span>Total paid</span><b class="kda lg" id="tPaid">0</b></div>
+      <div><span>Approved, paying out</span><b class="kda lg" id="tApproved">0</b></div>
+      <div><span>In review</span><b class="kda lg" id="tReview">0</b></div>
+    </div>
+    <div class="tabs" role="tablist" id="mineTabs">
+      <button role="tab" aria-selected="true" data-f="all">All</button>
+      <button role="tab" aria-selected="false" data-f="review">In review</button>
+      <button role="tab" aria-selected="false" data-f="approved">Approved</button>
+      <button role="tab" aria-selected="false" data-f="paid">Paid</button>
+    </div>
+    <ul class="rows" id="rows"></ul>
+  </section>
+
+  <!-- LEADERBOARD -->
+  <section class="view" id="v-board" aria-labelledby="h-board">
+    <div class="pagehead">
+      <div><h1 id="h-board">Leaderboard</h1><p>Ranked by paid work, not by how much KDA you hold.</p></div>
+      
+    </div>
+    <div class="podium" id="podium"></div>
+    <div class="scroll-x"><table class="lb" id="lb">
+      <thead><tr><th>#</th><th>Contributor</th><th>Level</th><th>Tasks paid</th><th>Earned</th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+  </section>
+
+  <!-- COMPLETED WORK -->
+  <section class="view" id="v-done" aria-labelledby="h-done">
+    <div class="pagehead">
+      <div><h1 id="h-done">Completed work</h1><p>Every paid task, with what was found, made, or fixed. Public, so the Kadena team and project maintainers can act on it.</p></div>
+      
+    </div>
+    <div class="stats">
+      <div><span>Paid submissions</span><b id="sPaid">0</b></div>
+      
+      
+      <div><span>KDA paid out</span><b class="kda lg" id="sKda">0</b></div>
+    </div>
+    <div class="bar">
+      <div class="chips" role="group" aria-label="Filter completed work" id="doneChips"></div>
+      <div class="search"><input type="search" id="doneQ" placeholder="Search findings, apps, contributors" aria-label="Search completed work"></div>
+    </div>
+    <ul class="log" id="log"></ul>
+  </section>
+
+  <!-- CREATE -->
+  <section class="view" id="v-create" aria-labelledby="h-create">
+    <div class="pagehead">
+      <div><h1 id="h-create">Create a task</h1><p>Your campaign goes live once the reward pool is confirmed in escrow.</p></div>
+    </div>
+    <div class="create">
+      <div class="panel">
+        <div class="templates chips" role="group" aria-label="Task template" id="tpl"></div>
+        <div class="form">
+          <div class="two"><div class="field"><label for="cSponsor">Sponsor shown on the card</label><input id="cSponsor" value="Kadena Earn"></div><div class="field"><label for="cMins">Estimated time (minutes)</label><input id="cMins" type="number" min="1" max="600" value="15"></div></div>
+          <div class="field"><label for="cTitle">Title</label><input id="cTitle" placeholder="e.g. Try Mercatus and tell us what confused you"></div>
+          <div class="field"><label for="cDesc">What contributors do</label><textarea id="cDesc" placeholder="One or two sentences in plain language."></textarea></div>
+          <div class="two">
+            <div class="field"><label for="cReward">Reward per person (KDA)</label><input id="cReward" type="number" min="0.000001" step="0.000001" value="0.1"></div>
+            <div class="field"><label for="cCount">Number of rewards</label><input id="cCount" type="number" min="1" value="3"></div>
+          </div>
+          <div class="two">
+            <div class="field"><label for="cProof">Proof required</label>
+              <select id="cProof"><option>Feedback and links</option><option>Link to original post</option><option>Bug or broken link report</option><option>Ecosystem listing</option><option>Reviewer confirmation</option></select><small>Picking a preset fills the proof fields below; edit them freely.</small></div>
+            <div class="field"><label for="cDeadline">Deadline (your local date and time)</label><input id="cDeadline" type="datetime-local" step="60"></div>
+          </div>
+          <div class="field"><label>Instructions (numbered steps contributors follow)</label><div class="qb" id="stepsB"></div></div>
+          <div class="field" id="proofWrap"><label>Proof contributors must submit</label><div class="qb" id="pb"></div><small>Mark a field Private to keep it reviewer-only (never shown on Completed work). The first non-private text field becomes the public finding.</small></div>
+          <div class="field"><label for="cRev">Reviewers</label><input id="cRev" readonly><small>Reviewers approve submissions. Only approved submissions release KDA.</small></div>
+        </div>
+        <div class="calc" aria-live="polite">
+          <div><span>Reward pool</span><span id="kPool">0.3 KDA</span></div>
+          
+          <div class="total"><span>Total to fund</span><span id="kTotal">0.3 KDA</span></div>
+        </div>
+      </div>
+      <div class="sticky">
+        <p class="preview-label">Preview – how contributors will see it</p>
+        <div id="preview"></div>
+        <div style="margin-top:16px"><button class="btn" id="fundBtn" disabled>Fund 0.3 KDA</button></div>
+        <div class="fundstate" id="fundState">Add a title to continue.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ADMIN -->
+  <section class="view" id="v-admin" aria-labelledby="h-admin">
+    <div class="adm-head">
+      <div><h1 id="h-admin" style="font-size:36px;font-weight:800">Admin</h1><p style="margin:4px 0 0;color:var(--muted)">Owner console. Review proof, watch the escrow, and release payments.</p></div>
+      <div class="pause"><span id="pauseLbl">Payouts running</span><button class="switch" id="pauseBtn" role="switch" aria-checked="false" aria-label="Emergency pause"></button></div>
+    </div>
+    <div class="kpi">
+      <div><span>Locked in escrow</span><b class="kda" id="kEsc">0</b></div>
+      <div><span>Paid out (all time)</span><b class="kda" id="kOut">0</b></div>
+      <div><span>Awaiting review</span><b id="kRev">0</b></div>
+      <div><span>Approved, unpaid</span><b class="kda" id="kUnpaid">0</b></div>
+      
+    </div>
+    <div class="adm-tabs" role="tablist" id="admTabs">
+      <button role="tab" aria-selected="true" data-a="review">Review queue <span class="count hot" id="cRevN">0</span></button>
+      <button role="tab" aria-selected="false" data-a="pay">Payouts <span class="count" id="cPay">0</span></button>
+      <button role="tab" aria-selected="false" data-a="camp">Campaigns</button>
+      
+      
+      
+    </div>
+    <div id="admBody"></div>
+  </section>
+<div id="notice" role="status" aria-live="polite" hidden></div></main>
+
+<nav class="bottom" aria-label="Primary">
+  <button data-go="explore" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Explore</button>
+  <button data-go="mine"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8 12 3 3 5-6"/></svg>My tasks</button>
+  <button data-go="board"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 20V11M12 20V5M18 20v-6"/></svg>Leaders</button>
+  <button data-go="done"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Done</button>
+  <button data-go="create" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Create</button>
+  <button data-go="admin" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/></svg>Admin</button>
+</nav>
+
+
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="dTitle" aria-hidden="true" inert>
+  <header><span class="badge ok" id="dFunded">Escrow funded</span><button class="x" id="dClose" aria-label="Close">✕</button></header>
+  <div class="body" id="dBody"></div>
+  <footer id="dFoot"></footer>
+</aside>
+
+
+<script type="module" src="/app.js"></script></body>
+</html>

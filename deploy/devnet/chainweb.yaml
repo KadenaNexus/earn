@@ -1,0 +1,14 @@
+chainweb:
+  chainwebVersion: development
+  serviceApi:
+    interface: '*'
+    port: 1848
+  p2p:
+    peer:
+      hostaddress:
+        port: 1789
+    ignoreBootstrapNodes: true
+    maxSessionCount: 2
+  mempoolP2p:
+    configuration:
+      maxSessionCount: 2

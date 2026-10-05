@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Transaction · Kadena Earn</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+<style>
+.transaction-top .wrap{justify-content:space-between}
+.transaction-main{max-width:980px}
+.transaction-main a{color:var(--mint)}
+.transaction-main h1{font-size:clamp(30px,5vw,44px)}
+.transaction-heading{display:flex;gap:20px;align-items:flex-start;justify-content:space-between;margin-bottom:28px}
+.transaction-heading p{margin:10px 0 0;color:var(--muted)}
+.transaction-card{border:1px solid var(--line);border-radius:16px;background:var(--surface);padding:24px;margin:20px 0}
+.transaction-card h2{font-size:19px;margin-bottom:16px}
+.transaction-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px 32px;margin:0}
+.transaction-grid dt{font-size:13px;color:var(--muted);margin-bottom:5px}
+.transaction-grid dd{margin:0;overflow-wrap:anywhere}
+.transaction-grid .full{grid-column:1/-1}
+.transaction-hash{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13px;overflow-wrap:anywhere}
+.transaction-status{margin:0 0 8px}
+.transaction-status .bad{color:var(--bad)}
+.transaction-message{color:var(--muted);margin:8px 0 0;white-space:pre-wrap}
+.transaction-main pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;margin:0}
+.transaction-main .tbl td{vertical-align:top}
+.transaction-main .tbl td.account{min-width:200px;max-width:320px;overflow-wrap:anywhere;font-size:12px}
+.transaction-main .tbl td.amount{white-space:nowrap}
+.transaction-main summary{cursor:pointer;font-weight:600}
+.transaction-main details pre{margin-top:18px}
+.transaction-empty{color:var(--muted);margin:0}
+@media(max-width:600px){.transaction-grid{grid-template-columns:1fr}.transaction-grid .full{grid-column:auto}.transaction-card{padding:18px}.transaction-heading{gap:12px}.transaction-heading .sm{margin-top:5px}}
+</style>
+<script type="module" src="/transaction.js"></script>
+</head>
+<body>
+<header class="top transaction-top">
+  <div class="wrap">
+    <a class="brand" href="/" aria-label="Kadena Earn home">
+      <svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><rect width="30" height="30" rx="8" fill="var(--mint)"/><path d="M9 7v16M9 15l9-8M9 15l9 8" stroke="var(--mint-ink)" stroke-width="3.2" stroke-linecap="round" fill="none"/></svg>
+      Kadena <small>Earn</small>
+    </a>
+    <a href="/" class="sm" style="color:var(--ink);text-decoration:none">Back to tasks</a>
+  </div>
+</header>
+<main class="wrap transaction-main">
+  <div class="transaction-heading">
+    <div><h1>Transaction</h1><p id="network">Loading network…</p></div>
+    <button class="sm" id="retry" type="button">Retry</button>
+  </div>
+  <section class="transaction-card" aria-labelledby="status-heading" aria-live="polite" aria-atomic="true">
+    <h2 id="status-heading">Confirmation</h2>
+    <p class="transaction-status"><span id="status" class="badge warn">Checking transaction</span></p>
+    <p class="transaction-message" id="message">Fetching the confirmed result from Chainweb.</p>
+  </section>
+  <section class="transaction-card" aria-labelledby="details-heading">
+    <h2 id="details-heading">Details</h2>
+    <dl class="transaction-grid">
+      <div class="full"><dt>Request key</dt><dd id="request-key" class="transaction-hash">—</dd></div>
+      <div><dt>Network</dt><dd id="network-id">—</dd></div>
+      <div><dt>Chain</dt><dd id="chain-id">—</dd></div>
+      <div><dt>Block height</dt><dd id="block-height">—</dd></div>
+      <div><dt>Gas units</dt><dd id="gas">—</dd></div>
+      <div><dt>Transaction ID</dt><dd id="transaction-id">—</dd></div>
+      <div class="full"><dt>Block hash</dt><dd id="block-hash" class="transaction-hash">—</dd></div>
+    </dl>
+  </section>
+  <section class="transaction-card" id="result-section" aria-labelledby="result-heading" hidden>
+    <h2 id="result-heading">Pact result</h2>
+    <pre id="result"></pre>
+  </section>
+  <section class="transaction-card" id="transfers-section" aria-labelledby="transfers-heading" hidden>
+    <h2 id="transfers-heading">KDA transfers</h2>
+    <p class="note">Every coin.TRANSFER event is listed, including the transfer that pays transaction gas.</p>
+    <p class="transaction-empty" id="no-transfers" hidden>No coin.TRANSFER events were recorded.</p>
+    <div class="scroll-x" id="transfers-table">
+      <table class="tbl"><thead><tr><th scope="col">From</th><th scope="col">To</th><th scope="col">Amount (KDA)</th></tr></thead><tbody id="transfers"></tbody></table>
+    </div>
+  </section>
+  <section class="transaction-card" id="raw-section" hidden>
+    <details><summary>Full Chainweb result</summary><pre id="raw"></pre></details>
+  </section>
+  <noscript><p class="note">Enable JavaScript to load this transaction’s confirmed Chainweb result.</p></noscript>
+</main>
+</body>
+</html>

@@ -1,0 +1,28 @@
+{
+  "name": "kadena-earn",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node --env-file=.env src/server.js",
+    "dev": "node --env-file=.env --watch src/server.js",
+    "migrate": "node --env-file=.env scripts/migrate.js",
+    "test": "node --test --test-concurrency=1 tests/*.test.js",
+    "test:pact": "node scripts/test-pact.js",
+    "test:chain": "node --env-file=.env scripts/chain-pilot.js",
+    "prepare:contract": "node --env-file=.env scripts/prepare-contract.js"
+  },
+  "dependencies": {
+    "blakejs": "^1.2.1",
+    "cookie-parser": "^1.4.7",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.1.0",
+    "helmet": "^8.1.0",
+    "pg": "^8.16.3",
+    "tweetnacl": "^1.0.3",
+    "zod": "^4.1.11"
+  }
+}

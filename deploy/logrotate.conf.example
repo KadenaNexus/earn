@@ -1,0 +1,11 @@
+__EARN_DIRECTORY__/logs/*.log {
+    daily
+    rotate 14
+    maxsize 20M
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    su __EARN_USER__ __EARN_GROUP__
+}
