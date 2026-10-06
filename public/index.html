@@ -139,8 +139,8 @@
           <div class="field"><label for="cTitle">Title</label><input id="cTitle" placeholder="e.g. Try Mercatus and tell us what confused you"></div>
           <div class="field"><label for="cDesc">What contributors do</label><textarea id="cDesc" placeholder="One or two sentences in plain language."></textarea></div>
           <div class="two">
-            <div class="field"><label for="cReward">Reward per person (KDA)</label><input id="cReward" type="number" min="0.000001" step="0.000001" value="0.1"></div>
-            <div class="field"><label for="cCount">Number of rewards</label><input id="cCount" type="number" min="1" value="3"></div>
+            <div class="field"><label for="cReward">Reward per person (KDA)</label><input id="cReward" type="number" min="0.000001" max="5000" step="0.000001" value="0.1" aria-describedby="cRewardLimit"><small id="cRewardLimit">Maximum 5,000 KDA per completed task.</small></div>
+            <div class="field"><label for="cCount">Number of rewards</label><input id="cCount" type="number" min="1" max="10000" step="1" value="3"></div>
           </div>
           <div class="two">
             <div class="field"><label for="cProof">Proof required</label>

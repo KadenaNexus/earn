@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { authenticated, admin } from './auth.js';
 import { audit } from './db.js';
 import { command, signingRequest, quote, decimal, micros, verifySignature } from './pact.js';
-import { campaignSchema, proofData, requireValue, HttpError } from './validation.js';
+import { campaignSchema, rewardSchema, maxTaskRewardKda, proofData, requireValue, HttpError } from './validation.js';
 import { enqueue, unwrap, syncCampaign, pauseState } from './jobs.js';
 
 const id = value => z.coerce.number().int().positive().parse(value);
@@ -38,7 +38,7 @@ export function apiRoutes(app,db,chain,c,worker) {
      return response;
    });
  }
- app.get('/api/config',(req,res)=>res.json({network:c.network,chain:c.chain,admin_account:c.admin,writes_enabled:c.writes,slot_hold_minutes:30,explorer:'/transactions/'}));
+ app.get('/api/config',(req,res)=>res.json({network:c.network,chain:c.chain,admin_account:c.admin,writes_enabled:c.writes,task_reward_cap_kda:maxTaskRewardKda,campaign_pool_cap_kda:null,slot_hold_minutes:30,explorer:'/transactions/'}));
  app.get('/api/transactions/:key',async(req,res)=>{const key=z.string().regex(/^[A-Za-z0-9_-]{43}$/).parse(req.params.key);const result=await chain.poll(key);requireValue(result,404,'Transaction has not confirmed yet');res.json(result);});
  app.get('/api/tasks',async(req,res)=>{
    const rows=(await db.query(`${campaignQuery} WHERE c.status='open' AND c.deadline>now() ORDER BY c.created_at DESC`)).rows;
@@ -164,7 +164,6 @@ export function apiRoutes(app,db,chain,c,worker) {
  app.get('/api/admin/campaigns',owner,async(req,res)=>res.json((await db.query(`${campaignQuery} ORDER BY c.created_at DESC`)).rows.map(taskView)));
  app.post('/api/admin/campaigns',owner,async(req,res)=>{
    assertWrites();const input=campaignSchema.parse(req.body);
-   if(c.network==='mainnet01'&&c.pilotMax)requireValue(micros(input.reward_kda)*BigInt(input.max_rewards)<=micros(c.pilotMax),400,`Pilot pool is capped at ${c.pilotMax} KDA`);
    res.json(await idempotent(req,async tx=>{
      await assertRunning(tx);const pactId=`campaign-${randomUUID()}`;
      const row=(await tx.query(`INSERT INTO task_campaigns(pact_campaign_id,sponsor_name,sponsor_account,title,summary,category,template,steps,proof_schema,reward_kda,max_rewards,minutes_estimate,deadline,featured) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,[pactId,input.sponsor_name,c.admin,input.title,input.summary,input.category,input.template,JSON.stringify(input.steps),JSON.stringify(input.proof_schema),input.reward_kda,input.max_rewards,input.minutes_estimate,input.deadline,input.featured])).rows[0];
@@ -174,6 +173,7 @@ export function apiRoutes(app,db,chain,c,worker) {
  app.post('/api/admin/campaigns/:id/funding-command',owner,async(req,res)=>{
    assertWrites();await assertRunning();const row=(await db.query('SELECT * FROM task_campaigns WHERE id=$1',[id(req.params.id)])).rows[0];
    requireValue(row&&['draft','funding_failed'].includes(row.status),409,'Campaign is already being funded');
+   rewardSchema.parse(row.reward_kda);
    const pool=Number(micros(row.reward_kda)*BigInt(row.max_rewards))/1e6;
    const code=`(${c.module}.create-and-fund ${quote(row.pact_campaign_id)} ${quote(c.admin)} ${decimal(row.reward_kda)} ${row.max_rewards} (time ${quote(new Date(row.deadline).toISOString().replace(/\.\d{3}Z$/,'Z'))}))`;
    const tx=command(c,code,{'recipient-keyset':{keys:[c.admin.slice(2)],pred:'keys-all'}},c.admin.slice(2),[{name:'coin.GAS',args:[]},{name:`${c.module}.GOVERNANCE`,args:[]},{name:'coin.TRANSFER',args:[c.admin,`${c.module.replace('.','-')}-escrow`,pool]}]);
@@ -187,6 +187,7 @@ export function apiRoutes(app,db,chain,c,worker) {
      requireValue(row,404,'Campaign not found');
      if(row.funding_tx===signed.hash)return {status:row.status,request_key:row.funding_tx};
      requireValue(['draft','funding_failed'].includes(row.status),409,'Campaign already has a funding transaction');
+     rewardSchema.parse(row.reward_kda);
      const b=JSON.parse(signed.cmd);
      const expected=`(${c.module}.create-and-fund ${quote(row.pact_campaign_id)} ${quote(c.admin)} ${decimal(row.reward_kda)} ${row.max_rewards} (time ${quote(new Date(row.deadline).toISOString().replace(/\.\d{3}Z$/,'Z'))}))`;
      requireValue(b.networkId===c.network&&b.meta.chainId===c.chain&&b.payload.exec.code===expected,400,'Funding command does not match this campaign');

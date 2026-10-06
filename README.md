@@ -26,7 +26,7 @@ The application never asks for a wallet password, recovery phrase or private key
 
 Connect the configured owner account to access **Create** and **Admin**.
 
-1. Create a campaign with instructions, category, reward per contributor, reward slots, deadline and text/link proof fields. Mark sensitive evidence fields **Private**. `PILOT_MAX_POOL_KDA` limits each campaign's total reward pool; its default is 0.3 KDA.
+1. Create a campaign with instructions, category, reward per contributor, reward slots, deadline and text/link proof fields. Mark sensitive evidence fields **Private**. Each completed task can pay up to 5,000 KDA, with at most six decimal places. The campaign pool is reward per person × reward slots, with no separate pool cap. Campaigns support up to 10,000 reward slots.
 2. Select **Create & fund** and review the escrow module, chain, amount and account in Ecko before signing. Campaigns open after confirmation. Saved drafts can also be funded from **Admin → Campaigns**.
 3. In the review queue, choose **Approve**, **Reject** or **Request changes**. Rejection and change requests require a note. Approval makes the payout available to send.
 4. In **Admin → Payouts**, select **Send**. The operations signer pays the fixed reserved reward from escrow. **Retry** is available only after a conclusive failure, with at most three owner retries. Pending or unknown transactions retain their original request key for reconciliation.

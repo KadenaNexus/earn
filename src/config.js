@@ -17,7 +17,7 @@ export function config(env = process.env) {
     opsSecret: env.OPS_SECRET_KEY, opsAccount: env.OPS_ACCOUNT,
     writes: env.ENABLE_CHAIN_WRITES === 'true', reviewed: env.CONTRACT_REVIEW_CONFIRMED === 'true',
     setup: env.ENABLE_CONTRACT_SETUP === 'true',
-    pilotMax: env.PILOT_MAX_POOL_KDA || '0.3', depth: Number(env.CONFIRMATION_DEPTH || 6),
+    depth: Number(env.CONFIRMATION_DEPTH || 6),
     gasPrice: Number(env.GAS_PRICE || '0.0000001'), workerMs: Number(env.WORKER_INTERVAL_MS || 10000),
     sessionHours: Number(env.SESSION_HOURS || 24),
   };
@@ -34,6 +34,5 @@ export function config(env = process.env) {
   if ((c.writes || c.setup) && Buffer.from(nacl.sign.keyPair.fromSeed(Buffer.from(c.opsSecret.slice(0,64),'hex')).publicKey).toString('hex')!==c.opsPublic) throw new Error('Operations secret and public key do not match');
   if (c.setup && (!c.reviewed || c.writes || c.network !== 'mainnet01' || c.depth < 6 || c.gasPrice !== 0.0000001)) throw new Error('Contract setup requires reviewed mainnet chain 1, depth 6, gas price 0.0000001 and ordinary writes disabled');
   if (c.setup && c.module) throw new Error('Keep PACT_MODULE blank during owner setup; configure it after installation and gas funding confirm');
-  if (c.pilotMax && !/^\d+(?:\.\d{1,6})?$/.test(c.pilotMax)) throw new Error('Invalid pilot pool cap');
   return c;
 }

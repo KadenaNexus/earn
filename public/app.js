@@ -111,12 +111,16 @@ function drawBuilders(){
 function formCampaign(){const selectedDeadline=new Date($('#cDeadline').value);return {title:$('#cTitle').value.trim(),summary:$('#cDesc').value.trim(),sponsor_name:$('#cSponsor').value.trim(),category:templates[selectedTemplate][1],template:templates[selectedTemplate][0],reward_kda:$('#cReward').value,max_rewards:Number($('#cCount').value),minutes_estimate:Number($('#cMins').value),deadline:Number.isFinite(selectedDeadline.getTime())?selectedDeadline.toISOString():'',steps,proof_schema:fields};}
 function calc(){
  const input=formCampaign(),pool=Number(input.reward_kda)*input.max_rewards;
+ const configuredCap=Number(state.config?.task_reward_cap_kda||$('#cReward').max||5000),rewardCap=Number.isFinite(configuredCap)&&configuredCap>0?configuredCap:5000;
+ $('#cReward').max=String(rewardCap);$('#cRewardLimit').textContent=`Maximum ${fmt(rewardCap)} KDA per completed task.`;
+ const validReward=/^\d+(?:\.\d{1,6})?$/.test(input.reward_kda)&&Number(input.reward_kda)>0&&Number(input.reward_kda)<=rewardCap;
+ const validSlots=Number.isInteger(input.max_rewards)&&input.max_rewards>=1&&input.max_rewards<=10000;
  $('#kPool').textContent=fmt(pool)+' KDA';$('#kTotal').textContent=fmt(pool)+' KDA';
  const t={cat:input.category,title:input.title||'Your task title',sum:input.summary||'What contributors will do',sponsor:input.sponsor_name||'Kadena Earn',reward:input.reward_kda,mins:input.minutes_estimate,left:input.max_rewards,max:input.max_rewards,ends:Math.max(0,Math.ceil((Date.parse(input.deadline)-Date.now())/86400000))};
  $('#preview').innerHTML=card(t,false);
- const valid=input.title.length>=8&&input.summary.length>=20&&input.sponsor_name.length>=2&&Number(input.reward_kda)>0&&Number.isInteger(input.max_rewards)&&input.max_rewards>0&&Date.parse(input.deadline)>Date.now()+60000&&steps.length&&steps.every(s=>s.trim())&&fields.length&&fields.every(f=>f.label.trim());
+ const valid=input.title.length>=8&&input.summary.length>=20&&input.sponsor_name.length>=2&&validReward&&validSlots&&Date.parse(input.deadline)>Date.now()+60000&&steps.length&&steps.every(s=>s.trim())&&fields.length&&fields.every(f=>f.label.trim());
  $('#fundBtn').disabled=!valid||state.creating||!state.config?.writes_enabled;$('#fundBtn').textContent=`Create & fund ${fmt(pool)} KDA`;
- if(!state.creating)$('#fundState').textContent=valid?'Your wallet signs funding. The task opens after confirmation.':'Complete the title, description, deadline, steps and proof fields.';
+ if(!state.creating)$('#fundState').textContent=!validReward?`Maximum ${fmt(rewardCap)} KDA per completed task. Enter a positive amount with at most six decimal places.`:!validSlots?'Choose between 1 and 10,000 reward slots.':valid?'Your wallet signs funding. The task opens after confirmation.':'Complete the title, description, deadline, steps and proof fields.';
 }
 $$('#cTitle,#cDesc,#cSponsor,#cReward,#cCount,#cMins,#cDeadline').forEach(i=>i.oninput=calc);
 const defaultDeadline=new Date();defaultDeadline.setDate(defaultDeadline.getDate()+7);defaultDeadline.setHours(23,59,0,0);
@@ -207,6 +211,7 @@ async function refresh(){
    const before=state.mine.find(m=>String(m.campaign_id)===String(state.cur?.id))?.s;await loadPersonal();const after=state.mine.find(m=>String(m.campaign_id)===String(state.cur?.id))?.s;
    if(state.drawer&&before!==after&&!$('#proofForm'))renderDrawer();
    if(state.view==='admin'){if(state.tab==='review'||document.activeElement?.matches('textarea,input'))await refreshAdminKpi();else await renderAdmin();}
+   if(state.view==='create')calc();
  }finally{refreshing=false;}
 }
 async function init(){try{state.config=await api('/config');const session=await api('/auth/session');state.user=session.user;state.csrf=session.csrf;sessionUI();calc();await refresh();setInterval(()=>{if(!document.hidden)refresh().catch(e=>notify(e.message));},15000);}catch(e){notify(e.message);$('#grid').innerHTML='<div class="empty">Unable to load tasks. Refresh after the service is available.</div>';}}

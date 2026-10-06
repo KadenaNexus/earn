@@ -6,9 +6,11 @@ const text = (min,max) => z.string().trim().min(min).max(max);
 export const categories = ['Testing','Ecosystem','Social','Community'];
 export const templates = ['Try & Review','Fix the Ecosystem','Discover & List','Create & Share','AMA'];
 const field = z.object({key:z.string().regex(/^[a-z][a-z0-9_]{0,39}$/),label:text(1,100),type:z.enum(['text','url']),min_len:z.number().int().min(0).max(2000).default(0),required:z.boolean().default(true),private:z.boolean().default(false)}).strict();
+export const maxTaskRewardKda = '5000';
+export const rewardSchema = z.union([z.string(),z.number()]).transform(String).refine(s=>/^\d+(?:\.\d{1,6})?$/.test(s)&&micros(s)>0n&&micros(s)<=micros(maxTaskRewardKda),'Reward must be greater than 0 and at most 5,000 KDA per completed task, with at most six decimal places');
 export const campaignSchema = z.object({
  title:text(8,180),summary:text(20,3000),sponsor_name:text(2,100),category:z.enum(categories),template:z.enum(templates),
- reward_kda:z.union([z.string(),z.number()]).transform(String).refine(s=>/^\d+(?:\.\d{1,6})?$/.test(s)&&micros(s)>0n&&micros(s)<=100000000000n,'Reward must be positive, at most 100,000 KDA and six decimals'),
+ reward_kda:rewardSchema,
  max_rewards:z.number().int().min(1).max(10000),minutes_estimate:z.number().int().min(1).max(600),
  deadline:z.iso.datetime().refine(s=>Date.parse(s)>Date.now()+60000&&Date.parse(s)<Date.now()+366*86400000,'Deadline must be between one minute and one year from now').transform(s=>new Date(s).toISOString().replace(/\.\d{3}Z$/,'Z')),
  steps:z.array(text(1,500)).min(1).max(20),proof_schema:z.array(field).min(1).max(20),featured:z.boolean().default(false),

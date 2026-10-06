@@ -104,7 +104,7 @@ chmod 600 .env
 nano .env
 ```
 
-Set `PORT` to the free application port, `APP_ORIGIN=https://YOUR_DOMAIN`, and `DATABASE_URL` to the dedicated database on `127.0.0.1` at its actual cluster port, using the password entered above. Keep the configured production owner, mainnet chain 1 and confirmation depth 6. Keep `CONTRACT_REVIEW_CONFIRMED=false` and `ENABLE_CHAIN_WRITES=false` during setup. The per-campaign pool cap defaults to 0.3 KDA.
+Set `PORT` to the free application port, `APP_ORIGIN=https://YOUR_DOMAIN`, and `DATABASE_URL` to the dedicated database on `127.0.0.1` at its actual cluster port, using the password entered above. Keep the configured production owner, mainnet chain 1 and confirmation depth 6. Keep `CONTRACT_REVIEW_CONFIRMED=false` and `ENABLE_CHAIN_WRITES=false` during setup. The application caps each contributor's task reward at 5,000 KDA and has no separate campaign pool cap; older `PILOT_MAX_POOL_KDA` environment entries are ignored.
 
 Generate a fresh production operations key. This command refuses existing/duplicate key assignments, writes the secret only into the protected environment and prints its public gas account:
 
