@@ -139,17 +139,21 @@ export class Worker {
        }
      });
      if(this.c.writes){await this.retryMaintenance();await this.prepareRefunds();}
-     const campaigns=(await this.db.query("SELECT id FROM task_campaigns WHERE status IN ('funding','open','ended') AND funding_tx IS NOT NULL")).rows;
-     for(const c of campaigns) {
-       if((await this.db.query("SELECT 1 FROM chain_jobs WHERE campaign_id=$1 AND kind='fund' AND status='confirmed'",[c.id])).rowCount)await syncCampaign(this.db,this.chain,c.id);
+     // Before deployment there is no contract to query. Saved transactions are
+     // still polled above, including recovery while new writes are disabled.
+     if(this.c.module) {
+       const campaigns=(await this.db.query("SELECT id FROM task_campaigns WHERE status IN ('funding','open','ended') AND funding_tx IS NOT NULL")).rows;
+       for(const c of campaigns) {
+         if((await this.db.query("SELECT 1 FROM chain_jobs WHERE campaign_id=$1 AND kind='fund' AND status='confirmed'",[c.id])).rowCount)await syncCampaign(this.db,this.chain,c.id);
+       }
+       await this.db.tx(async tx=>{
+         const pending=(await pauseState(tx,{lock:true})).pending;
+         // Read live state under the same mutex as pause acceptance. Otherwise a
+         // stale false read could overwrite the stop set by a concurrent request.
+         const state=unwrap(await this.chain.state());
+         await tx.query("UPDATE settings SET value=$1 WHERE key='payouts_paused'",[JSON.stringify(state.paused||!!pending)]);
+       });
      }
-     await this.db.tx(async tx=>{
-       const pending=(await pauseState(tx,{lock:true})).pending;
-       // Read live state under the same mutex as pause acceptance. Otherwise a
-       // stale false read could overwrite the stop set by a concurrent request.
-       const state=unwrap(await this.chain.state());
-       await tx.query("UPDATE settings SET value=$1 WHERE key='payouts_paused'",[JSON.stringify(state.paused||!!pending)]);
-     });
      this.lastSuccess=new Date().toISOString();this.lastError=null;
    }catch(error){this.lastError=error.message;console.error(JSON.stringify({event:'worker_error',error:error.message}));}
    finally {this.busy=false;}
