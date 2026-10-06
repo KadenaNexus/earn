@@ -200,23 +200,27 @@ BASH
 
 ## Production contract activation
 
-The production owner must sign a separate escrow installation. An existing deployment under another owner cannot be transferred by editing application configuration. Obtain acceptance of the contract review, set `CONTRACT_REVIEW_CONFIRMED=true`, and keep writes disabled while preparing:
+The production owner signs a separate escrow installation in desktop Ecko. Keep `PACT_MODULE` blank and ordinary writes disabled until both setup transactions confirm. Accept the review of the exact escrow source, then enable owner setup:
 
 ```sh
-npm run prepare:contract
-```
-
-The ignored `output/contract/` directory contains the unsigned command, QuickSign request metadata, source hashes, gas ceiling and exact Pact source. Preparation neither signs nor broadcasts. The owner reviews and QuickSigns the exact command in desktop Ecko; namespace installation requires an unscoped owner signature. Commands expire after 600 seconds, so regenerate unsigned preparation if needed. Preserve every signed/broadcast command and its request key.
-
-Broadcast the owner-signed command through the configured Chainweb node and verify native confirmation depth 6, module source/hash, owner/operations guards and sponsor. Fund/create the new operations `k:` gas account on mainnet chain 1. Set `PACT_MODULE` to the confirmed namespace/module and enable writes only after installation and gas funding confirm:
-
-```sh
-nano .env
+npm run setup:contract -- fdf806b5064fade82f71f11941e091cfeb0e87d9f5efe776d4aa4f6763047d32
 pm2 restart ecosystem.config.cjs --only kadena-earn --update-env
 pm2 save
 ```
 
-Verify desktop Ecko login, owner navigation, a small funded campaign, submission/review, confirmed payout, deadline refund and pause/resume. Automatic refunds require the worker and funded gas account.
+The preparation command creates operations keys only when all three key assignments are blank. It preserves existing matching keys, writes a protected `.env` backup, enables only the two setup transaction types and refuses modified escrow source. Keep `.env` and its private backups outside Git.
+
+The owner opens `https://YOUR_DOMAIN/setup.html`, signs in with the configured account, prepares the installation, reviews the full source and approves it directly in Ecko. Namespace installation needs an unscoped owner signature, with gas capped at 0.01 KDA. After six-block confirmation, prepare and approve the separate 0.05 KDA gas transfer to the operations account; its scoped transfer capability and maximum 0.0015 KDA gas appear in the review. Each approval is explicit. Check confirmations before retrying any uncertain response; unknown or expired saved transactions are never automatically replaced.
+
+Once the setup page reports both transactions confirmed, activate from the server:
+
+```sh
+npm run activate:contract
+pm2 restart ecosystem.config.cjs --only kadena-earn --update-env
+pm2 save
+```
+
+Activation verifies native depth-6 success again, the exact module hash, sponsor, both contract guards and the operations account guard and positive gas balance. It sets the confirmed `PACT_MODULE`, disables setup and enables campaign writes only after those checks pass. If any check fails, `.env` stays unchanged. Return to the main application after restarting. Automatic refunds require the worker and funded gas account.
 
 ## Backups and updates
 

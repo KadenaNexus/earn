@@ -13,7 +13,9 @@
     "test": "node --test --test-concurrency=1 tests/*.test.js",
     "test:pact": "node scripts/test-pact.js",
     "test:chain": "node --env-file=.env scripts/chain-pilot.js",
-    "prepare:contract": "node --env-file=.env scripts/prepare-contract.js"
+    "prepare:contract": "node --env-file=.env scripts/prepare-contract.js",
+    "setup:contract": "node --env-file=.env scripts/setup-contract.js prepare",
+    "activate:contract": "node --env-file=.env scripts/setup-contract.js activate"
   },
   "dependencies": {
     "blakejs": "^1.2.1",

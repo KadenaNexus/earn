@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Owner setup · Kadena Earn</title>
+<link rel="icon" type="image/svg+xml" sizes="any" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+<style>
+.setup-top .wrap{justify-content:space-between;gap:12px}
+.setup-main{max-width:980px}
+.setup-main a{color:var(--mint)}
+.setup-main h1{font-size:clamp(30px,5vw,44px)}
+.setup-intro{color:var(--muted);max-width:72ch}
+.setup-card{border:1px solid var(--line);border-radius:16px;background:var(--surface);padding:24px;margin:20px 0}
+.setup-card h2{font-size:19px;margin-bottom:16px}
+.setup-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px 32px;margin:0}
+.setup-grid dt{font-size:13px;color:var(--muted);margin-bottom:5px}
+.setup-grid dd{margin:0;overflow-wrap:anywhere}
+.setup-grid .full{grid-column:1/-1}
+.setup-actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:20px}
+.setup-actions .btn{width:auto}
+.setup-main pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;margin:0}
+.setup-main details{margin-top:20px}
+.setup-main details pre{margin-top:16px}
+.setup-main summary{cursor:pointer;font-weight:600}
+.setup-hash{font:13px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere}
+.setup-message{white-space:pre-wrap;color:var(--muted);margin-bottom:0}
+.setup-step{padding-top:16px;margin-top:16px;border-top:1px solid var(--line)}
+.setup-step h3{font-size:16px}
+.setup-step p{margin:8px 0 0}
+.setup-job-error{color:var(--bad);white-space:pre-wrap}
+.setup-job-link{display:inline-block;margin-top:8px}
+@media(max-width:600px){.setup-grid{grid-template-columns:1fr}.setup-grid .full{grid-column:auto}.setup-card{padding:18px}.setup-top .wrap{height:auto;min-height:72px;flex-wrap:wrap;padding-top:12px;padding-bottom:12px}.setup-actions .btn{width:100%}}
+</style>
+<script type="module" src="/setup.js"></script>
+</head>
+<body>
+<header class="top setup-top">
+  <div class="wrap">
+    <a class="brand" href="/" aria-label="Kadena Earn home">
+      <svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><rect width="30" height="30" rx="8" fill="var(--mint)"/><path d="M9 7v16M9 15l9-8M9 15l9 8" stroke="var(--mint-ink)" stroke-width="3.2" stroke-linecap="round" fill="none"/></svg>
+      Kadena <small>Earn</small>
+    </a>
+    <button class="wallet" id="connect" type="button">Connect owner Ecko wallet</button>
+  </div>
+</header>
+<main class="wrap setup-main">
+  <h1>Owner setup</h1>
+  <p class="setup-intro">Activate your campaign escrow using your desktop Ecko wallet. First install the contract, then fund its separate operations gas account. Each transaction needs your approval in Ecko.</p>
+  <section class="setup-card" aria-labelledby="connection-heading" aria-live="polite">
+    <h2 id="connection-heading">Connection</h2>
+    <p><span class="badge warn" id="connection-status">Loading</span></p>
+    <p class="setup-message" id="connection-message">Checking your wallet session.</p>
+    <p class="note" id="network">Loading network…</p>
+    <p class="note">Sign-in verifies your wallet signature without sending a transaction or spending KDA.</p>
+  </section>
+  <section class="setup-card" id="status-card" aria-labelledby="status-heading" hidden>
+    <h2 id="status-heading">Production escrow</h2>
+    <dl class="setup-grid">
+      <div class="full"><dt>Owner account</dt><dd class="setup-hash" id="owner">—</dd></div>
+      <div class="full"><dt>Contract module</dt><dd class="setup-hash" id="module">—</dd></div>
+      <div class="full"><dt>Operations gas account</dt><dd class="setup-hash" id="operations-account">—</dd></div>
+      <div><dt>Network and chain</dt><dd id="setup-network">—</dd></div>
+      <div><dt>Operations gas balance</dt><dd id="operations-balance">—</dd></div>
+    </dl>
+    <div class="setup-step">
+      <h3>1. Install the escrow contract</h3>
+      <p class="note">Deployment gas is capped at 0.01 KDA. Namespace installation requires an unscoped owner signature; review the complete Pact code before approving.</p>
+      <p id="install-status">Not submitted</p>
+      <a class="setup-hash setup-job-link" id="install-link" target="_blank" rel="noopener noreferrer" hidden></a>
+      <p class="setup-job-error" id="install-error" hidden></p>
+    </div>
+    <div class="setup-step">
+      <h3>2. Fund the operations gas account</h3>
+      <p class="note">Transfer 0.05 KDA for reservations, payouts and refunds. Transaction gas is capped at 0.0015 KDA. Campaign rewards are funded separately from your wallet.</p>
+      <p id="gas-status">Not submitted</p>
+      <a class="setup-hash setup-job-link" id="gas-link" target="_blank" rel="noopener noreferrer" hidden></a>
+      <p class="setup-job-error" id="gas-error" hidden></p>
+    </div>
+    <div class="setup-actions">
+      <button class="btn" id="prepare-install" type="button" disabled>Prepare contract installation</button>
+      <button class="btn ghost" id="prepare-gas" type="button" disabled>Prepare 0.05 KDA gas funding</button>
+      <button class="btn ghost" id="check" type="button" disabled>Check confirmations</button>
+    </div>
+    <p class="setup-message" id="readiness" role="status"></p>
+  </section>
+  <section class="setup-card" id="review-card" aria-labelledby="review-heading" hidden>
+    <h2 id="review-heading">Exact transaction for your review</h2>
+    <pre id="review"></pre>
+    <details><summary>Complete Pact code</summary><pre id="source"></pre></details>
+    <p class="note" id="expiry"></p>
+    <div class="setup-actions"><button class="btn" id="sign" type="button" disabled>Approve transaction in Ecko</button></div>
+  </section>
+  <section class="setup-card" id="notice-card" aria-live="polite" aria-atomic="true" hidden>
+    <h2 id="notice-title">Setup update</h2><p class="setup-message" id="notice"></p>
+  </section>
+  <p><a href="/">Back to Kadena Earn</a></p>
+  <noscript><p class="note">Enable JavaScript to connect Ecko and prepare owner transactions.</p></noscript>
+</main>
+</body>
+</html>

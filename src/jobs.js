@@ -129,6 +129,12 @@ export class Worker {
              continue;
            }
            if(job.status==='prepared') {
+             if(['setup_install','setup_gas'].includes(job.kind)) {
+               if(!this.setupSender)continue;
+               await this.setupSender(tx,job);
+               await tx.query("UPDATE chain_jobs SET status='broadcast',attempts=attempts+1,error=NULL WHERE id=$1",[job.id]);
+               continue;
+             }
              const bootstrap=this.c.allowPilotInstall&&(job.kind==='pilot_install'||job.kind==='pilot_gas'&&this.c.allowPilotGas)&&this.c.pilotInstallFamily&&job.dedupe_key.startsWith(this.c.pilotInstallFamily);
              if(!this.c.writes&&!bootstrap)continue;
              if(['fund','reserve','payout'].includes(job.kind)&&(await pauseState(tx)).paused)continue;

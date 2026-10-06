@@ -9,6 +9,7 @@ import { Chain } from './pact.js';
 import { Worker } from './jobs.js';
 import { authRoutes } from './auth.js';
 import { apiRoutes } from './api.js';
+import { setupRoutes } from './setup.js';
 import { requireValue } from './validation.js';
 
 export function createApp(db,chain,c,worker=new Worker(db,chain,c)) {
@@ -25,7 +26,7 @@ export function createApp(db,chain,c,worker=new Worker(db,chain,c)) {
    }next();
  });
  app.get('/healthz',async(req,res)=>{try{await db.query('SELECT 1');res.json({ok:true});}catch{res.status(503).json({ok:false});}});
- authRoutes(app,db,c);apiRoutes(app,db,chain,c,worker);
+ authRoutes(app,db,c);setupRoutes(app,db,chain,c,worker);apiRoutes(app,db,chain,c,worker);
  app.use('/api',(req,res)=>res.status(404).json({error:'Endpoint not found'}));
  app.get('/transactions/:key',(req,res)=>{
    requireValue(/^[A-Za-z0-9_-]{43}$/.test(req.params.key),400,'Invalid transaction request key');
