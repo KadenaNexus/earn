@@ -39,13 +39,13 @@ async function connect(){
  notify('Wallet connected. Sign-in does not send a transaction or spend KDA.');
 }
 function walletMenu(open){const m=$('#walletMenu');m.hidden=!open;$('#walletBtn').setAttribute('aria-expanded',String(open));}
-function fitHeader(){const top=$('header.top'),w=top.querySelector('.wrap'),n=top.querySelector('nav.primary');const over=()=>w.scrollWidth>w.clientWidth+1||n.scrollWidth>n.clientWidth+1;top.classList.remove('tight','tighter');if(over())top.classList.add('tight');if(over())top.classList.add('tighter');}
-window.addEventListener('resize',fitHeader);
+function fitHeader(){const top=$('header.top'),w=$('header.top .wrap'),n=$('header.top nav.primary');if(!top||!w||!n||typeof w.scrollWidth!=='number')return;const over=()=>w.scrollWidth>w.clientWidth+1||n.scrollWidth>n.clientWidth+1;top.classList.remove('tight','tighter');if(over())top.classList.add('tight');if(over())top.classList.add('tighter');}
+window.addEventListener?.('resize',fitHeader);
 document.fonts?.ready.then(fitHeader);
 $('#walletBtn').onclick=e=>{if(state.user){e.stopPropagation();walletMenu($('#walletMenu').hidden);}else action($('#walletBtn'),connect);};
 $('#walletOut').onclick=()=>action($('#walletOut'),async()=>{walletMenu(false);await api('/auth/logout',{});state.user=null;state.csrf=null;state.mine=[];sessionUI();closeDrawer();await refresh();});
 $('#walletCopy').onclick=async()=>{try{await navigator.clipboard.writeText(state.user?.account||'');notify('Address copied.');}catch{notify(state.user?.account||'');}walletMenu(false);};
-document.addEventListener('click',e=>{if(!e.target.closest('.wallet-wrap'))walletMenu(false);});
+document.addEventListener('click',e=>{if(!e.target?.closest?.('.wallet-wrap'))walletMenu(false);});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')walletMenu(false);});
 async function go(view){
  if(['admin','create'].includes(view)&&!owner())return;
