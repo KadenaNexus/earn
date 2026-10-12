@@ -51,12 +51,15 @@ h1,h2,h3{font-family:var(--display);margin:0;letter-spacing:-.01em}
 header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
 .top .wrap{display:flex;align-items:center;gap:1rem;height:auto;min-height:72px;max-width:72rem;min-width:0}
 .top .me{flex:none}
-.brand{display:flex;align-items:center;gap:.6rem;font:700 1.1rem/1 var(--display);text-decoration:none;color:var(--ink);white-space:nowrap;min-width:0}
+.brand{display:flex;align-items:center;gap:.6rem;font:700 1.1rem/1 var(--display);text-decoration:none;color:var(--ink);white-space:nowrap;flex:none}
 .brand img{display:block;width:32px;height:auto;flex:none}
 .nx-part{font:400 .85rem/1 var(--body);color:var(--muted);text-decoration:none;padding-left:1rem;border-left:1px solid var(--line);white-space:nowrap;flex:none}
 .nx-part:hover{color:var(--ink)}
 @media(max-width:900px){.nx-part{display:none}}
-nav.primary{display:flex;gap:4px;flex:1}
+nav.primary{display:flex;gap:4px;flex:1;min-width:0}
+/* When signed-in extras make the header too wide, drop the "Part of Kadena Nexus" link (it stays in the footer) instead of letting items overlap. */
+.top.tight .nx-part{display:none}
+.top.tighter nav.primary{gap:0}.top.tighter nav.primary button{padding:8px 8px;font-size:14px}
 nav.primary button{background:none;border:0;padding:8px 12px;border-radius:8px;color:var(--muted);font-weight:500;white-space:nowrap}
 nav.primary button[aria-current="page"]{color:var(--ink);background:var(--surface-2)}
 .me{display:flex;align-items:center;gap:12px}
@@ -67,6 +70,13 @@ nav.primary button[aria-current="page"]{color:var(--ink);background:var(--surfac
 .xpbar i{display:block;height:100%;width:62%;background:var(--teal)}
 .wallet{display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 12px 6px 8px;font-size:13px}
 .wallet .dot{width:8px;height:8px;border-radius:50%;background:var(--teal)}
+.wallet{white-space:nowrap}
+.wallet-wrap{position:relative}
+.wallet-menu{position:absolute;right:0;top:calc(100% + 8px);min-width:220px;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.12);padding:6px;z-index:40}
+.wallet-menu[hidden]{display:none}
+.wallet-acct{margin:0;padding:8px 10px;font-size:12px;color:var(--muted);word-break:break-all;border-bottom:1px solid var(--line)}
+.wallet-menu button{display:block;width:100%;text-align:left;background:none;border:0;border-radius:8px;padding:9px 10px;font-size:14px;color:var(--ink)}
+.wallet-menu button:hover,.wallet-menu button:focus-visible{background:var(--surface-2)}
 .theme-btn{border:1px solid var(--line);background:var(--surface);border-radius:999px;width:34px;height:34px;display:grid;place-items:center}
 
 .site-footer{border-top:1px solid var(--line);background:var(--surface)}
