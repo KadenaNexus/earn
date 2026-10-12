@@ -39,7 +39,7 @@ async function connect(){
  notify('Wallet connected. Sign-in does not send a transaction or spend KDA.');
 }
 function walletMenu(open){const m=$('#walletMenu');m.hidden=!open;$('#walletBtn').setAttribute('aria-expanded',String(open));}
-function fitHeader(){const top=$('header.top'),w=$('header.top .wrap'),n=$('header.top nav.primary');if(!top||!w||!n||typeof w.scrollWidth!=='number')return;const over=()=>w.scrollWidth>w.clientWidth+1||n.scrollWidth>n.clientWidth+1;top.classList.remove('tight','tighter');if(over())top.classList.add('tight');if(over())top.classList.add('tighter');}
+function fitHeader(){const top=$('header.top'),w=$('header.top .wrap'),n=$('header.top nav.primary');if(!top||!w||!n||typeof w.scrollWidth!=='number')return;const over=()=>w.scrollWidth>w.clientWidth+1||n.scrollWidth>n.clientWidth+1;top.classList.remove('tight','tighter','tightest');const short_=[...document.querySelectorAll?.('nav.primary [data-short]')||[]];short_.forEach(b=>{b.dataset.full??=b.textContent;b.textContent=b.dataset.full;});const btn=$('#walletBtn'),acct=state.user?.account;if(acct)btn.textContent=short(acct);if(over())top.classList.add('tight');if(over())top.classList.add('tighter');if(over()&&acct){btn.textContent=`${acct.slice(0,6)}…${acct.slice(-4)}`;}if(over())short_.forEach(b=>b.textContent=b.dataset.short);if(over())top.classList.add('tightest');}
 window.addEventListener?.('resize',fitHeader);
 document.fonts?.ready.then(fitHeader);
 $('#walletBtn').onclick=e=>{if(state.user){e.stopPropagation();walletMenu($('#walletMenu').hidden);}else action($('#walletBtn'),connect);};

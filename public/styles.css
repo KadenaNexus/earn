@@ -60,6 +60,7 @@ nav.primary{display:flex;gap:4px;flex:1;min-width:0}
 /* When signed-in extras make the header too wide, drop the "Part of Kadena Nexus" link (it stays in the footer) instead of letting items overlap. */
 .top.tight .nx-part{display:none}
 .top.tighter nav.primary{gap:0}.top.tighter nav.primary button{padding:8px 8px;font-size:14px}
+.top.tightest nav.primary{overflow-x:auto;scrollbar-width:none}.top.tightest nav.primary::-webkit-scrollbar{display:none}.top.tightest nav.primary button{padding:8px 6px}
 nav.primary button{background:none;border:0;padding:8px 12px;border-radius:8px;color:var(--muted);font-weight:500;white-space:nowrap}
 nav.primary button[aria-current="page"]{color:var(--ink);background:var(--surface-2)}
 .me{display:flex;align-items:center;gap:12px}
@@ -376,7 +377,7 @@ ul.proof li::before{content:"";width:16px;height:16px;border-radius:4px;border:1
 .sugg-tag.reject{background:color-mix(in srgb,var(--bad) 18%,transparent);color:var(--bad)}
 
 @media (max-width:1240px){.level{display:none}nav.primary{gap:0}nav.primary button{padding:8px 9px;font-size:14px}}
-@media (max-width:1060px) and (min-width:861px){.wallet{display:none}}
+/* the wallet button stays visible at every width; fitHeader() makes room instead */
 
 /* Quiz builder + quiz taking */
 .qb{border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--surface-2);display:grid;gap:12px}
