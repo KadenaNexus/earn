@@ -51,6 +51,59 @@
    "publisher": {
     "@id": "https://kadena.ws/#org"
    }
+  },
+  {
+   "@type": "FAQPage",
+   "mainEntity": [
+    {
+     "@type": "Question",
+     "name": "How do I earn KDA here?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Connect Ecko Wallet, pick a task and click Start task. Your slot is held for up to 30 minutes while you do the work and submit the proof the task asks for. Once a reviewer approves it, the reward is paid from escrow to your Kadena account."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "How do I know the reward will be paid?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Every task is funded in an on-chain escrow before it goes live, and the reward for your submission is reserved on chain when you submit. Every payout links to its transaction on Chainweb, so you can check it yourself."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Which wallet do I need?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Ecko Wallet in a desktop browser, with a single-key k: account. Signing in uses a one-time signature: it sends no transaction and costs no gas."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "How much can I earn?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Each task shows its reward on the card, up to 5,000 KDA per completed task. The leaderboard ranks contributors by paid work, not by how much KDA they hold."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "What if my submission is not approved?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "The reviewer can ask for changes, with a note explaining what to fix, and you can edit and resubmit. A rejection is final, and the reward reserved for it is released."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Will my work be public?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Paid work appears under Completed work only with your consent, so the Kadena team and project maintainers can act on it. Fields a task marks as private are only seen by you and the reviewer."
+     }
+    }
+   ]
   }
  ]
 }
@@ -125,6 +178,18 @@
       </div>
     </div>
     <div class="grid" id="grid"></div>
+
+    <section class="faq" aria-labelledby="h-faq">
+      <h2 id="h-faq">Questions about Kadena Earn</h2>
+      <div class="faq-grid">
+        <div><h3>How do I earn KDA here?</h3><p>Connect Ecko Wallet, pick a task and click Start task. Your slot is held for up to 30 minutes while you do the work and submit the proof the task asks for. Once a reviewer approves it, the reward is paid from escrow to your Kadena account.</p></div>
+        <div><h3>How do I know the reward will be paid?</h3><p>Every task is funded in an on-chain escrow before it goes live, and the reward for your submission is reserved on chain when you submit. Every payout links to its transaction on Chainweb, so you can check it yourself.</p></div>
+        <div><h3>Which wallet do I need?</h3><p>Ecko Wallet in a desktop browser, with a single-key k: account. Signing in uses a one-time signature: it sends no transaction and costs no gas.</p></div>
+        <div><h3>How much can I earn?</h3><p>Each task shows its reward on the card, up to 5,000 KDA per completed task. The leaderboard ranks contributors by paid work, not by how much KDA they hold.</p></div>
+        <div><h3>What if my submission is not approved?</h3><p>The reviewer can ask for changes, with a note explaining what to fix, and you can edit and resubmit. A rejection is final, and the reward reserved for it is released.</p></div>
+        <div><h3>Will my work be public?</h3><p>Paid work appears under Completed work only with your consent, so the Kadena team and project maintainers can act on it. Fields a task marks as private are only seen by you and the reviewer.</p></div>
+      </div>
+    </section>
 
     
   </section>
