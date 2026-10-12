@@ -32,6 +32,9 @@ export function createApp(db,chain,c,worker=new Worker(db,chain,c)) {
    requireValue(/^[A-Za-z0-9_-]{43}$/.test(req.params.key),400,'Invalid transaction request key');
    res.sendFile(fileURLToPath(new URL('../public/transaction.html',import.meta.url)));
  });
+ // Wallet extensions (Ecko) show the site icon in their own popup, a different origin. Helmet's
+ // Cross-Origin-Resource-Policy: same-origin blocks that, so allow cross-origin loads for icon files only.
+ app.use(['/favicon.ico','/favicon.svg','/nexus-mark.png','/apple-touch-icon.png'],(req,res,next)=>{res.setHeader('Cross-Origin-Resource-Policy','cross-origin');next();});
  app.use(express.static(fileURLToPath(new URL('../public',import.meta.url)),{maxAge:c.production?'1h':0}));
  app.use((error,req,res,next)=>{
    const status=error.name==='ZodError'?400:error.status||500;
