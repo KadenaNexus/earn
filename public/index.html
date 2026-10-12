@@ -24,6 +24,37 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/styles.css?v=20261012b">
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@graph": [
+  {
+   "@type": "Organization",
+   "@id": "https://kadena.ws/#org",
+   "name": "Kadena Nexus",
+   "url": "https://kadena.ws/",
+   "logo": "https://kadena.ws/logo-kadena-nexus.png",
+   "sameAs": [
+    "https://x.com/KadenaNexus",
+    "https://t.me/KadenaNexus",
+    "https://github.com/KadenaNexus"
+   ]
+  },
+  {
+   "@type": "WebApplication",
+   "name": "Kadena Earn",
+   "url": "https://earn.kadena.ws/",
+   "description": "Do something useful for Kadena and get paid in KDA. Test new apps, fix what is broken, explain what is new. Every task is funded in escrow before it goes live.",
+   "applicationCategory": "BusinessApplication",
+   "operatingSystem": "Web",
+   "isAccessibleForFree": true,
+   "publisher": {
+    "@id": "https://kadena.ws/#org"
+   }
+  }
+ ]
+}
+</script>
 </head>
 <body>
 
@@ -101,7 +132,7 @@
   <!-- MY TASKS -->
   <section class="view" id="v-mine" aria-labelledby="h-mine">
     <div class="pagehead">
-      <div><h1 id="h-mine">My tasks and rewards</h1><p>Every payout links to its transaction on Chainweb.</p></div>
+      <div><h2 id="h-mine">My tasks and rewards</h2><p>Every payout links to its transaction on Chainweb.</p></div>
     </div>
     <div class="totals">
       <div><span>Total paid</span><b class="kda lg" id="tPaid">0</b></div>
@@ -120,7 +151,7 @@
   <!-- LEADERBOARD -->
   <section class="view" id="v-board" aria-labelledby="h-board">
     <div class="pagehead">
-      <div><h1 id="h-board">Leaderboard</h1><p>Ranked by paid work, not by how much KDA you hold.</p></div>
+      <div><h2 id="h-board">Leaderboard</h2><p>Ranked by paid work, not by how much KDA you hold.</p></div>
       
     </div>
     <div class="podium" id="podium"></div>
@@ -133,7 +164,7 @@
   <!-- COMPLETED WORK -->
   <section class="view" id="v-done" aria-labelledby="h-done">
     <div class="pagehead">
-      <div><h1 id="h-done">Completed work</h1><p>Every paid task, with what was found, made, or fixed. Public, so the Kadena team and project maintainers can act on it.</p></div>
+      <div><h2 id="h-done">Completed work</h2><p>Every paid task, with what was found, made, or fixed. Public, so the Kadena team and project maintainers can act on it.</p></div>
       
     </div>
     <div class="stats">
@@ -152,7 +183,7 @@
   <!-- CREATE -->
   <section class="view" id="v-create" aria-labelledby="h-create">
     <div class="pagehead">
-      <div><h1 id="h-create">Create a task</h1><p>Your campaign goes live once the reward pool is confirmed in escrow.</p></div>
+      <div><h2 id="h-create">Create a task</h2><p>Your campaign goes live once the reward pool is confirmed in escrow.</p></div>
     </div>
     <div class="create">
       <div class="panel">
@@ -192,7 +223,7 @@
   <!-- ADMIN -->
   <section class="view" id="v-admin" aria-labelledby="h-admin">
     <div class="adm-head">
-      <div><h1 id="h-admin" style="font-size:36px;font-weight:800">Admin</h1><p style="margin:4px 0 0;color:var(--muted)">Owner console. Review proof, watch the escrow, and release payments.</p></div>
+      <div><h2 id="h-admin" style="font-size:36px;font-weight:800">Admin</h2><p style="margin:4px 0 0;color:var(--muted)">Owner console. Review proof, watch the escrow, and release payments.</p></div>
       <div class="pause"><span id="pauseLbl">Payouts running</span><button class="switch" id="pauseBtn" role="switch" aria-checked="false" aria-label="Emergency pause"></button></div>
     </div>
     <div class="kpi">

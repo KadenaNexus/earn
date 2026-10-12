@@ -197,7 +197,7 @@ ul.proof li::before{content:"";width:16px;height:16px;border-radius:4px;border:1
 
 /* My tasks */
 .pagehead{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;flex-wrap:wrap;margin-bottom:32px}
-.pagehead h1{font-size:36px;font-weight:800}
+.pagehead h1,.pagehead h2{font-size:36px;font-weight:800}
 .pagehead p{margin:4px 0 0;color:var(--muted)}
 .totals{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border:1px solid var(--line);border-radius:16px;background:var(--surface);margin-bottom:32px}
 .totals div{padding:18px 20px}
