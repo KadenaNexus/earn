@@ -22,7 +22,10 @@ function owner(){return state.user?.role==='admin';}
 function sessionUI(){
  $('#networkLabel').textContent=(state.config.network==='development'?'Local development chain':state.config.network==='mainnet01'?'Kadena mainnet':'Kadena '+state.config.network)+' · Chain '+state.config.chain;
  $$('[data-go="admin"],[data-go="create"]').forEach(b=>b.hidden=!owner());
- $('#walletBtn').textContent=state.user?`${short(state.user.account)} · Disconnect`:'Connect Ecko';
+ $('#walletBtn').textContent=state.user?short(state.user.account):'Connect Ecko';
+ $('#walletAcct').textContent=state.user?.account||'';
+ if(!state.user)walletMenu(false);
+ fitHeader();
  $('#walletBtn').title=state.user?.account||'Connect your desktop Ecko wallet';
  $('#cRev').value=state.config.admin_account;
  if(!owner()&&['admin','create'].includes(state.view))go('explore');
@@ -35,7 +38,15 @@ async function connect(){
  state.user=session.user;state.csrf=session.csrf;sessionUI();await refresh();
  notify('Wallet connected. Sign-in does not send a transaction or spend KDA.');
 }
-$('#walletBtn').onclick=()=>action($('#walletBtn'),async()=>{if(state.user){await api('/auth/logout',{});state.user=null;state.csrf=null;state.mine=[];sessionUI();closeDrawer();await refresh();}else await connect();});
+function walletMenu(open){const m=$('#walletMenu');m.hidden=!open;$('#walletBtn').setAttribute('aria-expanded',String(open));}
+function fitHeader(){const top=$('header.top'),w=$('header.top .wrap'),n=$('header.top nav.primary');if(!top||!w||!n||typeof w.scrollWidth!=='number')return;const over=()=>w.scrollWidth>w.clientWidth+1||n.scrollWidth>n.clientWidth+1;top.classList.remove('tight','tighter');if(over())top.classList.add('tight');if(over())top.classList.add('tighter');}
+window.addEventListener?.('resize',fitHeader);
+document.fonts?.ready.then(fitHeader);
+$('#walletBtn').onclick=e=>{if(state.user){e.stopPropagation();walletMenu($('#walletMenu').hidden);}else action($('#walletBtn'),connect);};
+$('#walletOut').onclick=()=>action($('#walletOut'),async()=>{walletMenu(false);await api('/auth/logout',{});state.user=null;state.csrf=null;state.mine=[];sessionUI();closeDrawer();await refresh();});
+$('#walletCopy').onclick=async()=>{try{await navigator.clipboard.writeText(state.user?.account||'');notify('Address copied.');}catch{notify(state.user?.account||'');}walletMenu(false);};
+document.addEventListener('click',e=>{if(!e.target?.closest?.('.wallet-wrap'))walletMenu(false);});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')walletMenu(false);});
 async function go(view){
  if(['admin','create'].includes(view)&&!owner())return;
  state.view=view;$$('.view').forEach(s=>s.classList.toggle('on',s.id==='v-'+view));
