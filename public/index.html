@@ -154,6 +154,7 @@
       <div>
         <h1 id="h-explore">Do something useful for Kadena. Get paid in KDA.</h1>
         <p>Test new apps, fix what's broken, explain what's new. Every task is funded in escrow before it goes live, so an approved submission always pays.</p>
+        <p class="ai-line" id="aiLine" hidden><span class="badge ai">AI-reviewed</span> Some tasks are reviewed and paid by an AI agent on Kadena. It checks your proof within minutes and sends the reward from escrow; anything it is unsure about goes to a human reviewer.</p>
         <div class="mine">
           <div><span>You've earned</span><b class="kda lg" id="heroEarned">0</b></div>
           <div><span>In review</span><b class="kda lg" id="heroPending">0</b></div>
@@ -239,6 +240,7 @@
       
       
       <div><span>KDA paid out</span><b class="kda lg" id="sKda">0</b></div>
+      <div id="sAiWrap" hidden><span>Reviewed &amp; paid by AI agent</span><b id="sAi">0</b></div>
     </div>
     <div class="bar">
       <div class="chips" role="group" aria-label="Filter completed work" id="doneChips"></div>
@@ -271,6 +273,8 @@
           <div class="field"><label>Instructions (numbered steps contributors follow)</label><div class="qb" id="stepsB"></div></div>
           <div class="field" id="proofWrap"><label>Proof contributors must submit</label><div class="qb" id="pb"></div><small>Mark a field Private to keep it reviewer-only (never shown on Completed work). The first non-private text field becomes the public finding.</small></div>
           <div class="field"><label for="cRev">Reviewers</label><input id="cRev" readonly><small>Reviewers approve submissions. Only approved submissions release KDA.</small></div>
+          <div class="field"><label class="check"><input type="checkbox" id="cAi"> Let the AI agent review and pay this task</label><small id="cAiHelp">The agent approves or asks for changes and pays from escrow within your limits. It never rejects; anything it is unsure about stays in your review queue.</small></div>
+          <div class="field" id="cAiCritWrap" hidden><label for="cAiCrit">What the AI reviewer should check</label><textarea id="cAiCrit" maxlength="2000" placeholder="e.g. Must name the app screen and describe what went wrong in two or more sentences."></textarea><small>The agent sees the steps, proof fields and this note. It cannot open links, so tasks it can judge from text work best.</small></div>
         </div>
         <div class="calc" aria-live="polite">
           <div><span>Reward pool</span><span id="kPool">0.3 KDA</span></div>
@@ -304,6 +308,7 @@
       <button role="tab" aria-selected="true" data-a="review">Review queue <span class="count hot" id="cRevN">0</span></button>
       <button role="tab" aria-selected="false" data-a="pay">Payouts <span class="count" id="cPay">0</span></button>
       <button role="tab" aria-selected="false" data-a="camp">Campaigns</button>
+      <button role="tab" aria-selected="false" data-a="ai">AI reviewer <span class="count" id="cAiOn">Off</span></button>
       
       
       

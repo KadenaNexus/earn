@@ -7,12 +7,14 @@ import { config } from './config.js';
 import { database } from './db.js';
 import { Chain } from './pact.js';
 import { Worker } from './jobs.js';
+import { ReviewAgent } from './agent.js';
 import { authRoutes } from './auth.js';
 import { apiRoutes } from './api.js';
 import { setupRoutes } from './setup.js';
 import { requireValue } from './validation.js';
 
 export function createApp(db,chain,c,worker=new Worker(db,chain,c)) {
+ if(worker.agent===undefined)worker.agent=c.ai?.apiKey?new ReviewAgent(db,chain,c):null;
  const app=express();app.disable('x-powered-by');if(c.production)app.set('trust proxy',1);
  app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'"],styleSrc:["'self'","'unsafe-inline'","https://fonts.googleapis.com"],fontSrc:["'self'","https://fonts.gstatic.com"],imgSrc:["'self'","data:"],connectSrc:["'self'"],objectSrc:["'none'"],frameAncestors:["'none'"],upgradeInsecureRequests:c.production?[]:null}},strictTransportSecurity:c.production?undefined:false}));
  app.use(express.json({limit:'128kb'}));app.use(cookieParser());

@@ -14,6 +14,7 @@ export const campaignSchema = z.object({
  max_rewards:z.number().int().min(1).max(10000),minutes_estimate:z.number().int().min(1).max(600),
  deadline:z.iso.datetime().refine(s=>Date.parse(s)>Date.now()+60000&&Date.parse(s)<Date.now()+366*86400000,'Deadline must be between one minute and one year from now').transform(s=>new Date(s).toISOString().replace(/\.\d{3}Z$/,'Z')),
  steps:z.array(text(1,500)).min(1).max(20),proof_schema:z.array(field).min(1).max(20),featured:z.boolean().default(false),
+ ai_review:z.boolean().default(false),ai_criteria:z.string().trim().max(2000).optional(),
 }).strict().refine(c=>new Set(c.proof_schema.map(f=>f.key)).size===c.proof_schema.length,'Proof field keys must be unique');
 export function safeUrl(value) { try { const u=new URL(value); return ['http:','https:'].includes(u.protocol)&&!u.username&&!u.password; } catch { return false; } }
 export function proofData(schema,body) {

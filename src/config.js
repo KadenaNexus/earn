@@ -20,10 +20,19 @@ export function config(env = process.env) {
     depth: Number(env.CONFIRMATION_DEPTH || 6),
     gasPrice: Number(env.GAS_PRICE || '0.0000001'), workerMs: Number(env.WORKER_INTERVAL_MS || 10000),
     sessionHours: Number(env.SESSION_HOURS || 24),
+    ai: {
+      apiKey: env.ANTHROPIC_API_KEY || '', model: env.AI_REVIEW_MODEL || 'claude-sonnet-5-5',
+      maxReward: env.AI_REVIEW_MAX_REWARD_KDA || '1', dailyKda: env.AI_REVIEW_DAILY_KDA || '10',
+      minConfidence: Number(env.AI_REVIEW_MIN_CONFIDENCE || 0.85), maxRounds: Number(env.AI_REVIEW_MAX_ROUNDS || 2),
+      perTick: Number(env.AI_REVIEW_PER_TICK || 3),
+    },
   };
   accountSchema.parse(c.admin);
   if (!c.database) throw new Error('DATABASE_URL is required');
   if (c.module && !/^(?:[a-zA-Z][\w-]*\.)?[a-zA-Z][\w-]*$/.test(c.module)) throw new Error('Invalid PACT_MODULE');
+  if (!(c.ai.minConfidence >= 0.5 && c.ai.minConfidence <= 1)) throw new Error('AI_REVIEW_MIN_CONFIDENCE must be between 0.5 and 1');
+  if (!/^\d+(\.\d{1,6})?$/.test(c.ai.maxReward) || !/^\d+(\.\d{1,6})?$/.test(c.ai.dailyKda)) throw new Error('AI review KDA limits must be plain decimals');
+  if (!Number.isInteger(c.ai.maxRounds) || c.ai.maxRounds < 1 || c.ai.maxRounds > 5) throw new Error('AI_REVIEW_MAX_ROUNDS must be 1–5');
   if (c.chain !== '1') throw new Error('Kadena Earn must use chain 1');
   if (!Number.isInteger(c.depth) || c.depth < 1) throw new Error('Invalid confirmation depth');
   if (c.production && (!c.origin.startsWith('https://') || !c.node.startsWith('https://'))) throw new Error('Production requires HTTPS origins and nodes');
