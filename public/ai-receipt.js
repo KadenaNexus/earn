@@ -36,6 +36,8 @@ async function load() {
     set('#r-task', r.task);
     set('#r-reward', `${Number(r.reward_kda)} KDA`);
     set('#r-recipient', r.recipient);
+    set('#r-reviewed', r.reviewed_by === 'ai-agent' ? 'AI agent' : r.reviewed_by);
+    set('#r-paid', r.paid_by === 'ai-agent' ? 'AI agent, from the task escrow' : r.paid_by);
     set('#r-decision', `${r.decision === 'approve' ? 'Approved' : r.decision} · ${Math.round(Number(r.confidence) * 100)}% confidence`);
     set('#r-model', r.model);
     set('#r-at', new Date(r.reviewed_at).toLocaleString());

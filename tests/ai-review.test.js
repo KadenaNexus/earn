@@ -96,14 +96,14 @@ test('AI payouts carry an on-chain label and a public receipt anyone can verify'
    assert.match(exec.code, /\.pay-reward /);
    assert.ok(exec.data['recipient-keyset']);
    const label = exec.data['ai-review'];
-   assert.equal(label.reviewer, 'ai-agent'); assert.equal(label.model, 'test-model');
+   assert.equal(label['reviewed-by'], 'ai-agent'); assert.equal(label['paid-by'], 'ai-agent'); assert.equal(label.model, 'test-model');
    assert.equal(label.receipt, `${t.c.origin}/ai-receipts/${a.id}`);
    // The public receipt hashes to the fingerprint on the chain.
    const r = (await t.owner.call('/ai-receipts/' + a.id)).data;
    assert.equal(createHash('sha256').update(r.receipt).digest('hex'), label.receipt_sha256);
    assert.equal(r.receipt_sha256, label.receipt_sha256);
    const body = JSON.parse(r.receipt);
-   assert.equal(body.reviewer, 'ai-agent'); assert.equal(body.decision, 'approve'); assert.equal(body.submission, a.id);
+   assert.equal(body.reviewed_by, 'ai-agent'); assert.equal(body.paid_by, 'ai-agent'); assert.equal(body.decision, 'approve'); assert.equal(body.submission, a.id);
    assert.equal(body.reasons, 'All steps done.'); assert.equal(body.proof_sha256, proofHash(proof(11)));
    assert.equal(r.payout.status, 'confirmed'); assert.equal(r.payout.tx, (await t.db.query('SELECT request_key FROM payouts WHERE submission_id=$1', [a.id])).rows[0].request_key);
    assert.equal((await t.owner.call('/payouts/recent')).data[0].receipt, a.id);

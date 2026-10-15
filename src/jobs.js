@@ -21,8 +21,8 @@ export async function pauseState(tx,{lock=false}={}) {
 // pay the fixed reserved reward to the fixed recipient through the same job.
 // Callers must check writes and the pause gate first.
 // A payout the AI agent approved carries a public label in its transaction data
-// (the contract ignores it): who reviewed it and the SHA-256 of the public
-// receipt. A retry pressed by the owner keeps the same label.
+// (the contract ignores it): reviewed by and paid by the AI agent, and the
+// SHA-256 of the public receipt. A retry pressed by the owner keeps the same label.
 export async function queuePayout(tx,chain,c,pid,{actor=null,retry=false,agent=false}={}) {
  const p=(await tx.query('SELECT p.*,s.campaign_id,c.pact_campaign_id FROM payouts p JOIN submissions s ON s.id=p.submission_id JOIN task_campaigns c ON c.id=s.campaign_id WHERE p.id=$1 FOR UPDATE OF p',[pid])).rows[0];
  requireValue(p,404,'Payout not found');
@@ -35,7 +35,7 @@ export async function queuePayout(tx,chain,c,pid,{actor=null,retry=false,agent=f
 }
 export async function aiLabel(tx,c,submission) {
  const r=(await tx.query("SELECT model,receipt_hash FROM ai_reviews WHERE submission_id=$1 AND applied='approved' AND receipt_hash IS NOT NULL ORDER BY id DESC LIMIT 1",[submission])).rows[0];
- return r?{'ai-review':{reviewer:'ai-agent',model:r.model,receipt_sha256:r.receipt_hash,receipt:`${c.origin}/ai-receipts/${submission}`}}:{};
+ return r?{'ai-review':{'reviewed-by':'ai-agent','paid-by':'ai-agent',model:r.model,receipt_sha256:r.receipt_hash,receipt:`${c.origin}/ai-receipts/${submission}`}}:{};
 }
 export function unwrap(value) {
  if (value&&typeof value==='object'&&!Array.isArray(value)) {

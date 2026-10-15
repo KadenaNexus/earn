@@ -133,7 +133,7 @@ main.wrap{padding:56px 20px 120px}
 .task{position:relative;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:22px;display:flex;flex-direction:column;gap:12px;transition:border-color .15s}
 .task:hover{border-color:color-mix(in srgb,var(--teal) 55%,var(--line))}
 .task.featured{grid-column:span 2;background:linear-gradient(135deg,var(--surface) 55%,color-mix(in srgb,var(--teal) 12%,var(--surface)))}
-.task .meta{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--muted)}
+.task .meta{display:flex;flex-wrap:wrap;gap:6px 10px;justify-content:space-between;align-items:center;font-size:13px;color:var(--muted)}
 .cat{font-weight:600;color:var(--teal-text)}
 .task h3{font-size:18px;line-height:1.25;font-weight:700}
 .task.featured h3{font-size:24px;max-width:22ch}
@@ -146,7 +146,7 @@ main.wrap{padding:56px 20px 120px}
 .badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:3px 9px;border-radius:999px;background:var(--surface-2);color:var(--muted)}
 .badge.ok{color:var(--teal-text);background:color-mix(in srgb,var(--teal) 14%,transparent)}
 .badge.warn{color:var(--warn);background:color-mix(in srgb,var(--warn) 14%,transparent)}
-.badge.ai{color:var(--teal-text);background:color-mix(in srgb,var(--teal) 10%,transparent);border:1px solid color-mix(in srgb,var(--teal) 35%,transparent)}
+.badge.ai{white-space:nowrap;color:var(--teal-text);background:color-mix(in srgb,var(--teal) 10%,transparent);border:1px solid color-mix(in srgb,var(--teal) 35%,transparent)}
 .ai-line{display:flex;gap:8px;align-items:flex-start;font-size:14px;color:var(--muted);margin-top:4px}
 .ai-line .badge{flex:none;margin-top:1px}
 .ai-box{border:1px solid var(--line);border-left:3px solid var(--teal);border-radius:10px;padding:10px 12px;margin:0 0 14px;background:var(--surface)}

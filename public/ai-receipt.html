@@ -16,7 +16,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600&display=swap" media="print" data-fonts>
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600&display=swap"></noscript>
 <script src="/fonts.js" defer></script>
-<link rel="stylesheet" href="/styles.css?v=20261013">
+<link rel="stylesheet" href="/styles.css?v=20261015">
 <script type="module" src="/theme.js"></script>
 <style>
 .transaction-back{margin-left:auto}
@@ -67,7 +67,7 @@
 </header>
 <main class="wrap transaction-main">
   <div class="transaction-heading">
-    <div><h1>AI payout receipt</h1><p>This reward was reviewed and paid by the Kadena Earn AI agent, without a person approving it.</p></div>
+    <div><h1>AI payout receipt</h1><p><span class="badge ai">Reviewed by AI agent</span> <span class="badge ai">Paid by AI agent</span></p><p>The Kadena Earn AI agent reviewed this task and paid the reward from escrow, without a person approving it.</p></div>
   </div>
   <section class="transaction-card" aria-labelledby="check-heading" aria-live="polite">
     <h2 id="check-heading">Check</h2>
@@ -79,6 +79,8 @@
       <div class="full"><dt>Task</dt><dd id="r-task">—</dd></div>
       <div><dt>Reward</dt><dd id="r-reward">—</dd></div>
       <div><dt>Paid to</dt><dd id="r-recipient" class="transaction-hash">—</dd></div>
+      <div><dt>Reviewed by</dt><dd id="r-reviewed">—</dd></div>
+      <div><dt>Paid by</dt><dd id="r-paid">—</dd></div>
       <div><dt>Decision</dt><dd id="r-decision">—</dd></div>
       <div><dt>AI model</dt><dd id="r-model">—</dd></div>
       <div><dt>Reviewed at</dt><dd id="r-at">—</dd></div>
@@ -90,7 +92,7 @@
     <h2 id="verify-heading">Verify it yourself</h2>
     <ol class="receipt-steps">
       <li>The receipt below is the exact text the agent wrote when it approved the payment. Its SHA-256 fingerprint is <code id="r-hash">—</code></li>
-      <li>That same fingerprint is written into the payout transaction on Kadena, in the transaction data under <code>ai-review.receipt_sha256</code>, together with <code>"reviewer": "ai-agent"</code>. Open the request key <code id="r-key">—</code> in any Kadena explorer (chain 1) and compare.</li>
+      <li>That same fingerprint is written into the payout transaction on Kadena, in the transaction data under <code>ai-review.receipt_sha256</code>, together with <code>"reviewed-by": "ai-agent"</code> and <code>"paid-by": "ai-agent"</code>. Open the request key <code id="r-key">—</code> in any Kadena explorer (chain 1) and compare.</li>
       <li>If anyone edited this receipt after the payment, its fingerprint would no longer match the one on the chain. This page recomputes it in your browser every time you open it.</li>
     </ol>
   </section>
