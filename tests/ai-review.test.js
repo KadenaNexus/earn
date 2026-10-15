@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from '../src/server.js';
 import { Worker } from '../src/jobs.js';
+import { createHash } from 'node:crypto';
 import { ReviewAgent, buildPrompt, cleanDecision, anthropicReviewer, proofHash } from '../src/agent.js';
 import { testDatabase, testKey, testConfig, TestChain, client, campaignInput } from './helpers.js';
 
@@ -33,7 +34,7 @@ async function setup(schema, env = {}) {
  }
  const status = async id => (await db.query('SELECT status,review_note,ai_reviewed FROM submissions WHERE id=$1', [id])).rows[0];
  const on = async (v = true) => { const r = await owner.call('/admin/ai-review', { enabled: v }); assert.equal(r.status, 200, JSON.stringify(r.data)); };
- return { db, c, chain, worker, owner, calls, campaign, submit, status, on, setNext: f => { next = f; }, close: async () => { server.close(); await db.close(); } };
+ return { db, c, chain, worker, owner, base, calls, campaign, submit, status, on, setNext: f => { next = f; }, close: async () => { server.close(); await db.close(); } };
 }
 
 test('Prompt treats submissions as data and decisions are clamped', () => {
@@ -79,6 +80,51 @@ test('AI reviewer approves and pays, and is shown publicly', async () => {
    const audit = (await t.db.query("SELECT action,actor_id,metadata FROM audit_log WHERE action IN ('approve','send') ORDER BY id")).rows;
    assert.deepEqual(audit.map(r => [r.action, r.actor_id, r.metadata.agent]), [['approve', null, true], ['send', null, true]]);
    await t.worker.tick(); assert.equal(t.calls.length, 1, 'never reviews the same proof twice');
+ } finally { await t.close(); }
+});
+
+test('AI payouts carry an on-chain label and a public receipt anyone can verify', async () => {
+ const t = await setup('ke_ai_receipt');
+ try {
+   await t.on(); const cid = await t.campaign();
+   const a = await t.submit(cid, proof(11));
+   for (let i = 0; i < 5; i++) await t.worker.tick();
+   assert.equal((await t.status(a.id)).status, 'paid');
+   // The payout transaction's data carries the label; the contract code is unchanged.
+   const job = (await t.db.query("SELECT command FROM chain_jobs WHERE kind='payout' AND submission_id=$1", [a.id])).rows[0];
+   const exec = JSON.parse(job.command.cmd).payload.exec;
+   assert.match(exec.code, /\.pay-reward /);
+   assert.ok(exec.data['recipient-keyset']);
+   const label = exec.data['ai-review'];
+   assert.equal(label.reviewer, 'ai-agent'); assert.equal(label.model, 'test-model');
+   assert.equal(label.receipt, `${t.c.origin}/ai-receipts/${a.id}`);
+   // The public receipt hashes to the fingerprint on the chain.
+   const r = (await t.owner.call('/ai-receipts/' + a.id)).data;
+   assert.equal(createHash('sha256').update(r.receipt).digest('hex'), label.receipt_sha256);
+   assert.equal(r.receipt_sha256, label.receipt_sha256);
+   const body = JSON.parse(r.receipt);
+   assert.equal(body.reviewer, 'ai-agent'); assert.equal(body.decision, 'approve'); assert.equal(body.submission, a.id);
+   assert.equal(body.reasons, 'All steps done.'); assert.equal(body.proof_sha256, proofHash(proof(11)));
+   assert.equal(r.payout.status, 'confirmed'); assert.equal(r.payout.tx, (await t.db.query('SELECT request_key FROM payouts WHERE submission_id=$1', [a.id])).rows[0].request_key);
+   assert.equal((await t.owner.call('/payouts/recent')).data[0].receipt, a.id);
+   const page = await fetch(`${t.base}/ai-receipts/${a.id}`); assert.equal(page.status, 200); assert.match(await page.text(), /AI payout receipt/);
+   assert.equal((await fetch(`${t.base}/ai-receipts/not-a-receipt`)).status, 400);
+
+   // Without consent to publish the proof, the reasons stay private.
+   const u = await t.submit(cid, proof(12)); // submit() gives consent; make a private one directly
+   await t.db.query('UPDATE submissions SET public_consent=false WHERE id=$1', [u.id]);
+   for (let i = 0; i < 5; i++) await t.worker.tick();
+   assert.equal(JSON.parse((await t.owner.call('/ai-receipts/' + u.id)).data.receipt).reasons, null);
+
+   // A payout the owner approves has no AI label and no receipt.
+   await t.on(false); const o = await t.submit(cid, proof(13));
+   await t.worker.tick(); await t.worker.tick();
+   assert.equal((await t.owner.call('/submissions/' + o.id + '/approve', {})).status, 200);
+   const pid = (await t.db.query('SELECT id FROM payouts WHERE submission_id=$1', [o.id])).rows[0].id;
+   assert.equal((await t.owner.call('/admin/payouts/' + pid + '/send', {}, { 'idempotency-key': 'send-owner-1' })).status, 200);
+   const ojob = (await t.db.query("SELECT command FROM chain_jobs WHERE kind='payout' AND submission_id=$1", [o.id])).rows[0];
+   assert.equal(JSON.parse(ojob.command.cmd).payload.exec.data['ai-review'], undefined);
+   assert.equal((await t.owner.call('/ai-receipts/' + o.id)).status, 404);
  } finally { await t.close(); }
 });
 

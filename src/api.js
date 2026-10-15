@@ -64,15 +64,23 @@ export function apiRoutes(app,db,chain,c,worker) {
  });
  app.get('/api/payouts/recent',async(req,res)=>{
    const limit=z.coerce.number().int().min(1).max(50).parse(req.query.limit||4);
-   const rows=(await db.query(`SELECT p.amount_kda reward,p.request_key tx,c.template type,c.sponsor_name sponsor,s.ai_reviewed ai,u.kadena_account FROM payouts p JOIN submissions s ON s.id=p.submission_id JOIN users u ON u.id=s.user_id JOIN task_campaigns c ON c.id=s.campaign_id WHERE p.status='confirmed' ORDER BY p.paid_at DESC,p.id DESC LIMIT $1`,[limit])).rows;
+   const rows=(await db.query(`SELECT p.amount_kda reward,p.request_key tx,c.template type,c.sponsor_name sponsor,s.ai_reviewed ai,CASE WHEN s.ai_reviewed THEN s.id END receipt,u.kadena_account FROM payouts p JOIN submissions s ON s.id=p.submission_id JOIN users u ON u.id=s.user_id JOIN task_campaigns c ON c.id=s.campaign_id WHERE p.status='confirmed' ORDER BY p.paid_at DESC,p.id DESC LIMIT $1`,[limit])).rows;
    res.json(rows.map(({kadena_account,...r})=>({...r,who:short(kadena_account)})));
+ });
+ // Public receipt of an AI payout: the exact text whose SHA-256 is in the payout transaction's data.
+ app.get('/api/ai-receipts/:id',async(req,res)=>{
+   const sid=z.string().uuid().parse(req.params.id);
+   const r=(await db.query(`SELECT a.receipt,a.receipt_hash,p.status,p.request_key,p.paid_at FROM ai_reviews a LEFT JOIN payouts p ON p.submission_id=a.submission_id
+     WHERE a.submission_id=$1 AND a.applied='approved' AND a.receipt IS NOT NULL ORDER BY a.id DESC,p.created_at DESC LIMIT 1`,[sid])).rows[0];
+   requireValue(r,404,'No AI receipt for this submission');
+   res.json({receipt:r.receipt,receipt_sha256:r.receipt_hash,payout:{status:r.status||null,tx:r.request_key||null,paid_at:r.paid_at||null},network:c.network,chain:c.chain});
  });
  app.get('/api/leaderboard',async(req,res)=>{
    const rows=(await db.query(`SELECT u.kadena_account, count(*) done,sum(p.amount_kda) earned FROM payouts p JOIN submissions s ON s.id=p.submission_id JOIN users u ON u.id=s.user_id WHERE p.status='confirmed' GROUP BY u.id ORDER BY done DESC,earned DESC,u.id LIMIT 100`)).rows;
    res.json(rows.map(({kadena_account,...r})=>({...r,name:short(kadena_account),you:kadena_account===req.user?.kadena_account})));
  });
  app.get('/api/work',async(req,res)=>{
-   const rows=(await db.query(`SELECT w.id,w.finding_text f,w.public_links links,s.ai_reviewed ai,p.paid_at d,p.request_key tx,p.amount_kda r,c.title t,c.category cat,c.sponsor_name sp,u.kadena_account FROM work_items w JOIN submissions s ON s.id=w.submission_id JOIN payouts p ON p.submission_id=s.id JOIN task_campaigns c ON c.id=s.campaign_id JOIN users u ON u.id=s.user_id WHERE p.status='confirmed' ORDER BY p.paid_at DESC LIMIT 500`)).rows;
+   const rows=(await db.query(`SELECT w.id,w.finding_text f,w.public_links links,s.ai_reviewed ai,CASE WHEN s.ai_reviewed THEN s.id END receipt,p.paid_at d,p.request_key tx,p.amount_kda r,c.title t,c.category cat,c.sponsor_name sp,u.kadena_account FROM work_items w JOIN submissions s ON s.id=w.submission_id JOIN payouts p ON p.submission_id=s.id JOIN task_campaigns c ON c.id=s.campaign_id JOIN users u ON u.id=s.user_id WHERE p.status='confirmed' ORDER BY p.paid_at DESC LIMIT 500`)).rows;
    let list=rows.map(({kadena_account,...r})=>({...r,by:short(kadena_account)}));
    if(req.query.filter&&req.query.filter!=='all')list=list.filter(r=>r.cat===req.query.filter);
    if(req.query.q){const q=String(req.query.q).toLowerCase();list=list.filter(r=>(r.f+r.t+r.by+r.sp).toLowerCase().includes(q));}

@@ -14,6 +14,10 @@ CREATE TABLE ai_reviews (
  note TEXT,
  applied TEXT NOT NULL DEFAULT 'pending' CHECK(applied IN ('pending','approved','changes_requested','escalated','skipped')),
  skip_reason TEXT,
+ -- Public receipt for an approved review: the exact text that was hashed, and
+ -- its SHA-256, which is also written into the payout transaction's data.
+ receipt TEXT,
+ receipt_hash TEXT,
  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
  UNIQUE(submission_id,proof_hash)
 );

@@ -20,15 +20,22 @@ export async function pauseState(tx,{lock=false}={}) {
 // Shared by the owner's Send/Retry buttons and the AI review agent, so both
 // pay the fixed reserved reward to the fixed recipient through the same job.
 // Callers must check writes and the pause gate first.
+// A payout the AI agent approved carries a public label in its transaction data
+// (the contract ignores it): who reviewed it and the SHA-256 of the public
+// receipt. A retry pressed by the owner keeps the same label.
 export async function queuePayout(tx,chain,c,pid,{actor=null,retry=false,agent=false}={}) {
  const p=(await tx.query('SELECT p.*,s.campaign_id,c.pact_campaign_id FROM payouts p JOIN submissions s ON s.id=p.submission_id JOIN task_campaigns c ON c.id=s.campaign_id WHERE p.id=$1 FOR UPDATE OF p',[pid])).rows[0];
  requireValue(p,404,'Payout not found');
  if(['sending','confirmed'].includes(p.status))return {status:p.status,request_key:p.request_key};
  requireValue(p.status===(retry?'failed':'pending'),409,retry?'Only a conclusively failed payout can be retried':'Use Retry for a failed payout');
  requireValue(!retry||p.retry_count<3,409,'Three retries exhausted; reconcile the transaction before further action');
- const job=await enqueue(tx,{key:`payout:${p.id}:${p.retry_count+(retry?1:0)}`,kind:'payout',campaign:p.campaign_id,submission:p.submission_id,payout:p.id,actor,command:chain.ops(`(${c.module}.pay-reward ${quote(p.pact_campaign_id)} ${quote(p.submission_id)} ${quote(p.recipient)})`,{'recipient-keyset':{keys:[p.recipient.slice(2)],pred:'keys-all'}})});
+ const job=await enqueue(tx,{key:`payout:${p.id}:${p.retry_count+(retry?1:0)}`,kind:'payout',campaign:p.campaign_id,submission:p.submission_id,payout:p.id,actor,command:chain.ops(`(${c.module}.pay-reward ${quote(p.pact_campaign_id)} ${quote(p.submission_id)} ${quote(p.recipient)})`,{'recipient-keyset':{keys:[p.recipient.slice(2)],pred:'keys-all'},...await aiLabel(tx,c,p.submission_id)})});
  await tx.query("UPDATE payouts SET status='sending',request_key=$2,error=NULL,retry_count=retry_count+$3 WHERE id=$1",[pid,job.request_key,retry?1:0]);
  await audit(tx,actor,retry?'retry':'send','payout',pid,{tx:job.request_key,...(agent?{agent:true}:{})});return {status:'sending',request_key:job.request_key};
+}
+export async function aiLabel(tx,c,submission) {
+ const r=(await tx.query("SELECT model,receipt_hash FROM ai_reviews WHERE submission_id=$1 AND applied='approved' AND receipt_hash IS NOT NULL ORDER BY id DESC LIMIT 1",[submission])).rows[0];
+ return r?{'ai-review':{reviewer:'ai-agent',model:r.model,receipt_sha256:r.receipt_hash,receipt:`${c.origin}/ai-receipts/${submission}`}}:{};
 }
 export function unwrap(value) {
  if (value&&typeof value==='object'&&!Array.isArray(value)) {

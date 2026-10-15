@@ -33,6 +33,32 @@ const TOOL = {
  },
 };
 
+// Public receipt for an AI payout. The exact text is stored and published; its
+// SHA-256 goes into the payout transaction's data, so anyone can check that the
+// receipt existed when the payment was made and was not edited afterwards.
+// Field order is fixed here; verify by hashing the published text byte for byte.
+export function buildReceipt({ submission, campaign, recipient, model, decision, reviewedAt, proof }) {
+ const text = JSON.stringify({
+   v: 1,
+   site: 'Kadena Earn',
+   reviewer: 'ai-agent',
+   model,
+   submission,
+   task: campaign.title,
+   escrow_campaign: campaign.pact_campaign_id,
+   reward_kda: String(campaign.reward_kda),
+   recipient,
+   decision: decision.decision,
+   confidence: decision.confidence,
+   // The reviewer's reasons can describe the proof, so they are public only
+   // when the contributor agreed to publish their proof.
+   reasons: proof.public ? decision.reasons : null,
+   proof_sha256: proof.hash,
+   reviewed_at: reviewedAt,
+ }, null, 1);
+ return { text, hash: createHash('sha256').update(text).digest('hex') };
+}
+
 export function proofHash(proof) {
  return createHash('sha256').update(JSON.stringify(Object.keys(proof || {}).sort().map(k => [k, proof[k]]))).digest('hex');
 }
@@ -108,7 +134,7 @@ export class ReviewAgent {
    return micros(String(r.total));
  }
  async candidates() {
-   return (await this.db.query(`SELECT s.*, c.title, c.summary, c.steps, c.proof_schema, c.ai_criteria, c.reward_kda
+   return (await this.db.query(`SELECT s.*, c.title, c.summary, c.steps, c.proof_schema, c.ai_criteria, c.reward_kda, c.pact_campaign_id
      FROM submissions s JOIN task_campaigns c ON c.id=s.campaign_id
      WHERE s.status='in_review' AND c.ai_review AND c.reward_kda <= $1
      ORDER BY s.submitted_at LIMIT 50`, [this.c.ai.maxReward])).rows;
@@ -171,11 +197,13 @@ export class ReviewAgent {
        if (reward > micros(this.c.ai.maxReward)) { applied = 'escalated'; skip = 'over_task_limit'; }
        else if ((await this.spentToday(tx)) + reward > limit) { applied = 'escalated'; skip = 'daily_limit'; }
      }
-     await tx.query(`INSERT INTO ai_reviews(submission_id,proof_hash,model,decision,confidence,reasons,note,applied,skip_reason)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(submission_id,proof_hash) DO NOTHING`,
-       [row.id, hash, this.c.ai.model, d.decision, d.confidence, d.reasons, d.note || null, applied, skip]);
+     const user = applied === 'approved' ? (await tx.query('SELECT kadena_account FROM users WHERE id=$1', [s.user_id])).rows[0] : null;
+     const receipt = applied === 'approved' ? buildReceipt({ submission: s.id, campaign: row, recipient: user.kadena_account, model: this.c.ai.model, decision: d,
+       reviewedAt: new Date().toISOString(), proof: { hash, public: !!s.public_consent } }) : null;
+     await tx.query(`INSERT INTO ai_reviews(submission_id,proof_hash,model,decision,confidence,reasons,note,applied,skip_reason,receipt,receipt_hash)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT(submission_id,proof_hash) DO NOTHING`,
+       [row.id, hash, this.c.ai.model, d.decision, d.confidence, d.reasons, d.note || null, applied, skip, receipt?.text || null, receipt?.hash || null]);
      if (applied === 'approved') {
-       const user = (await tx.query('SELECT kadena_account FROM users WHERE id=$1', [s.user_id])).rows[0];
        const payout = (await tx.query('INSERT INTO payouts(submission_id,amount_kda,recipient) VALUES($1,$2,$3) RETURNING id', [s.id, row.reward_kda, user.kadena_account])).rows[0];
        await tx.query("UPDATE submissions SET status='approved',reviewer_id=NULL,ai_reviewed=true,review_note=$2,reviewed_at=now() WHERE id=$1", [s.id, d.note ? 'AI reviewer: ' + d.note : 'Approved by the AI reviewer.']);
        await audit(tx, null, 'approve', 'submission', s.id, { agent: true, model: this.c.ai.model, confidence: d.confidence });
