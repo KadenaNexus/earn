@@ -4,7 +4,7 @@ import { authenticated, admin } from './auth.js';
 import { audit } from './db.js';
 import { command, signingRequest, quote, decimal, micros, verifySignature } from './pact.js';
 import { campaignSchema, rewardSchema, maxTaskRewardKda, proofData, requireValue, HttpError } from './validation.js';
-import { enqueue, unwrap, syncCampaign, pauseState } from './jobs.js';
+import { enqueue, unwrap, syncCampaign, pauseState, queuePayout } from './jobs.js';
 
 const id = value => z.coerce.number().int().positive().parse(value);
 const short = account => `${account.slice(0,10)}…${account.slice(-6)}`;
@@ -13,7 +13,7 @@ export function taskView(c) {
  const occupied=Number(c.occupied||0);
  return {id:c.id,cat:c.category,type:c.template,title:c.title,sum:c.summary,sponsor:c.sponsor_name,
    reward:c.reward_kda,mins:c.minutes_estimate,max:c.max_rewards,left:Math.max(0,Math.min(c.max_rewards-occupied,snap?c.max_rewards-Number(snap['paid-count'])-Number(snap['reserved-count']):c.max_rewards)),
-   ends:Math.max(0,Math.ceil((Date.parse(c.deadline)-Date.now())/86400000)),deadline:c.deadline,featured:c.featured,
+   ends:Math.max(0,Math.ceil((Date.parse(c.deadline)-Date.now())/86400000)),deadline:c.deadline,featured:c.featured,ai:!!c.ai_review,
    steps:c.steps,proof:c.proof_schema.map(f=>f.label),proof_schema:c.proof_schema,status:c.status,
    escrow:snap?{funded:snap.funded,paid:snap.paid,refunded:snap.refunded,remaining:Number(snap.funded)-Number(snap.paid)-Number(snap.refunded),reserved:Number(snap.reward)*Number(snap['reserved-count']),checked_at:c.chain_checked_at}:null,
    funding_tx:c.funding_tx};
@@ -38,7 +38,7 @@ export function apiRoutes(app,db,chain,c,worker) {
      return response;
    });
  }
- app.get('/api/config',(req,res)=>res.json({network:c.network,chain:c.chain,admin_account:c.admin,writes_enabled:c.writes,task_reward_cap_kda:maxTaskRewardKda,campaign_pool_cap_kda:null,slot_hold_minutes:30,explorer:'/transactions/'}));
+ app.get('/api/config',(req,res)=>res.json({network:c.network,chain:c.chain,admin_account:c.admin,writes_enabled:c.writes,task_reward_cap_kda:maxTaskRewardKda,campaign_pool_cap_kda:null,slot_hold_minutes:30,explorer:'/transactions/',ai_review_max_reward_kda:c.ai.maxReward}));
  app.get('/api/transactions/:key',async(req,res)=>{const key=z.string().regex(/^[A-Za-z0-9_-]{43}$/).parse(req.params.key);const result=await chain.poll(key);requireValue(result,404,'Transaction has not confirmed yet');res.json(result);});
  app.get('/api/tasks',async(req,res)=>{
    const rows=(await db.query(`${campaignQuery} WHERE c.status='open' AND c.deadline>now() ORDER BY c.created_at DESC`)).rows;
@@ -57,29 +57,37 @@ export function apiRoutes(app,db,chain,c,worker) {
  });
  app.get('/api/campaigns/:id/ledger',async(req,res)=>res.json((await db.query('SELECT event_type,amount_kda,tx,created_at FROM campaign_ledger WHERE campaign_id=$1 ORDER BY id',[id(req.params.id)])).rows));
  app.get('/api/stats',async(req,res)=>{
-   const r=(await db.query(`SELECT count(*) AS paid_submissions,coalesce(sum(amount_kda),0) AS kda_paid FROM payouts WHERE status='confirmed'`)).rows[0];
+   const r=(await db.query(`SELECT count(*) AS paid_submissions,coalesce(sum(p.amount_kda),0) AS kda_paid,count(*) FILTER(WHERE s.ai_reviewed) AS ai_paid_submissions,coalesce(sum(p.amount_kda) FILTER(WHERE s.ai_reviewed),0) AS ai_kda_paid FROM payouts p JOIN submissions s ON s.id=p.submission_id WHERE p.status='confirmed'`)).rows[0];
    const campaigns=(await db.query("SELECT reward_kda,max_rewards,chain_snapshot FROM task_campaigns WHERE status='open' AND deadline>now()")).rows;
    let open=0n;for(const t of campaigns)if(t.chain_snapshot)open+=micros(t.reward_kda)*BigInt(Math.max(0,t.max_rewards-Number(t.chain_snapshot['paid-count'])-Number(t.chain_snapshot['reserved-count'])));
    res.json({...r,open_rewards:Number(open)/1e6});
  });
  app.get('/api/payouts/recent',async(req,res)=>{
    const limit=z.coerce.number().int().min(1).max(50).parse(req.query.limit||4);
-   const rows=(await db.query(`SELECT p.amount_kda reward,p.request_key tx,c.template type,c.sponsor_name sponsor,u.kadena_account FROM payouts p JOIN submissions s ON s.id=p.submission_id JOIN users u ON u.id=s.user_id JOIN task_campaigns c ON c.id=s.campaign_id WHERE p.status='confirmed' ORDER BY p.paid_at DESC,p.id DESC LIMIT $1`,[limit])).rows;
+   const rows=(await db.query(`SELECT p.amount_kda reward,p.request_key tx,c.template type,c.sponsor_name sponsor,s.ai_reviewed ai,CASE WHEN s.ai_reviewed THEN s.id END receipt,u.kadena_account FROM payouts p JOIN submissions s ON s.id=p.submission_id JOIN users u ON u.id=s.user_id JOIN task_campaigns c ON c.id=s.campaign_id WHERE p.status='confirmed' ORDER BY p.paid_at DESC,p.id DESC LIMIT $1`,[limit])).rows;
    res.json(rows.map(({kadena_account,...r})=>({...r,who:short(kadena_account)})));
+ });
+ // Public receipt of an AI payout: the exact text whose SHA-256 is in the payout transaction's data.
+ app.get('/api/ai-receipts/:id',async(req,res)=>{
+   const sid=z.string().uuid().parse(req.params.id);
+   const r=(await db.query(`SELECT a.receipt,a.receipt_hash,p.status,p.request_key,p.paid_at FROM ai_reviews a LEFT JOIN payouts p ON p.submission_id=a.submission_id
+     WHERE a.submission_id=$1 AND a.applied='approved' AND a.receipt IS NOT NULL ORDER BY a.id DESC,p.created_at DESC LIMIT 1`,[sid])).rows[0];
+   requireValue(r,404,'No AI receipt for this submission');
+   res.json({receipt:r.receipt,receipt_sha256:r.receipt_hash,payout:{status:r.status||null,tx:r.request_key||null,paid_at:r.paid_at||null},network:c.network,chain:c.chain});
  });
  app.get('/api/leaderboard',async(req,res)=>{
    const rows=(await db.query(`SELECT u.kadena_account, count(*) done,sum(p.amount_kda) earned FROM payouts p JOIN submissions s ON s.id=p.submission_id JOIN users u ON u.id=s.user_id WHERE p.status='confirmed' GROUP BY u.id ORDER BY done DESC,earned DESC,u.id LIMIT 100`)).rows;
    res.json(rows.map(({kadena_account,...r})=>({...r,name:short(kadena_account),you:kadena_account===req.user?.kadena_account})));
  });
  app.get('/api/work',async(req,res)=>{
-   const rows=(await db.query(`SELECT w.id,w.finding_text f,w.public_links links,p.paid_at d,p.request_key tx,p.amount_kda r,c.title t,c.category cat,c.sponsor_name sp,u.kadena_account FROM work_items w JOIN submissions s ON s.id=w.submission_id JOIN payouts p ON p.submission_id=s.id JOIN task_campaigns c ON c.id=s.campaign_id JOIN users u ON u.id=s.user_id WHERE p.status='confirmed' ORDER BY p.paid_at DESC LIMIT 500`)).rows;
+   const rows=(await db.query(`SELECT w.id,w.finding_text f,w.public_links links,s.ai_reviewed ai,CASE WHEN s.ai_reviewed THEN s.id END receipt,p.paid_at d,p.request_key tx,p.amount_kda r,c.title t,c.category cat,c.sponsor_name sp,u.kadena_account FROM work_items w JOIN submissions s ON s.id=w.submission_id JOIN payouts p ON p.submission_id=s.id JOIN task_campaigns c ON c.id=s.campaign_id JOIN users u ON u.id=s.user_id WHERE p.status='confirmed' ORDER BY p.paid_at DESC LIMIT 500`)).rows;
    let list=rows.map(({kadena_account,...r})=>({...r,by:short(kadena_account)}));
    if(req.query.filter&&req.query.filter!=='all')list=list.filter(r=>r.cat===req.query.filter);
    if(req.query.q){const q=String(req.query.q).toLowerCase();list=list.filter(r=>(r.f+r.t+r.by+r.sp).toLowerCase().includes(q));}
    res.json(list);
  });
  app.get('/api/me/tasks',authenticated,async(req,res)=>{
-   const rows=(await db.query(`SELECT c.id campaign_id,c.title t,c.reward_kda r,c.deadline,t.expires_at,s.id submission_id,s.status,s.review_note,s.proof_json,s.public_consent,p.request_key tx,p.error,
+   const rows=(await db.query(`SELECT c.id campaign_id,c.title t,c.reward_kda r,c.deadline,t.expires_at,s.id submission_id,s.status,s.review_note,s.ai_reviewed ai,s.proof_json,s.public_consent,p.request_key tx,p.error,
      coalesce(s.submitted_at,t.started_at) AS "when",CASE WHEN s.id IS NULL THEN CASE WHEN t.expires_at>now() THEN 'started' ELSE 'expired' END ELSE s.status END AS s
      FROM task_starts t JOIN task_campaigns c ON c.id=t.campaign_id LEFT JOIN submissions s ON s.campaign_id=c.id AND s.user_id=t.user_id LEFT JOIN payouts p ON p.submission_id=s.id WHERE t.user_id=$1 ORDER BY t.started_at DESC`,[req.user.id])).rows;
    res.json(rows);
@@ -124,7 +132,9 @@ export function apiRoutes(app,db,chain,c,worker) {
      await audit(tx,req.user.id,'submit','submission',sid);return s;
    }));
  });
- app.get('/api/reviewer/submissions',owner,async(req,res)=>res.json((await db.query(`SELECT s.*,c.title task,c.reward_kda reward,c.proof_schema,u.kadena_account AS "by" FROM submissions s JOIN task_campaigns c ON c.id=s.campaign_id JOIN users u ON u.id=s.user_id WHERE s.status IN ('in_review','changes_requested') ORDER BY s.submitted_at`)).rows));
+ app.get('/api/reviewer/submissions',owner,async(req,res)=>res.json((await db.query(`SELECT s.*,c.title task,c.reward_kda reward,c.proof_schema,c.ai_review campaign_ai,u.kadena_account AS "by",
+   (SELECT json_build_object('decision',a.decision,'confidence',a.confidence,'reasons',a.reasons,'note',a.note,'applied',a.applied,'skip_reason',a.skip_reason,'at',a.created_at) FROM ai_reviews a WHERE a.submission_id=s.id ORDER BY a.id DESC LIMIT 1) ai
+   FROM submissions s JOIN task_campaigns c ON c.id=s.campaign_id JOIN users u ON u.id=s.user_id WHERE s.status IN ('in_review','changes_requested') ORDER BY s.submitted_at`)).rows));
  for(const action of ['approve','reject','request-changes'])app.post(`/api/submissions/:id/${action}`,owner,async(req,res)=>{
    const sid=z.uuid().parse(req.params.id);const {note=''}=z.object({note:z.string().trim().max(2000).optional()}).strict().parse(req.body||{});
    requireValue(action==='approve'||note.length>=5,400,'A review note of at least five characters is required');
@@ -143,17 +153,10 @@ export function apiRoutes(app,db,chain,c,worker) {
      await audit(tx,req.user.id,action,'submission',sid,{note});return {status};
    }));
  });
- app.get('/api/admin/payouts',owner,async(req,res)=>res.json((await db.query(`SELECT p.*,c.title task,s.id sub,u.kadena_account AS "by" FROM payouts p JOIN submissions s ON s.id=p.submission_id JOIN task_campaigns c ON c.id=s.campaign_id JOIN users u ON u.id=s.user_id ORDER BY p.created_at DESC`)).rows));
+ app.get('/api/admin/payouts',owner,async(req,res)=>res.json((await db.query(`SELECT p.*,c.title task,s.id sub,s.ai_reviewed ai,u.kadena_account AS "by" FROM payouts p JOIN submissions s ON s.id=p.submission_id JOIN task_campaigns c ON c.id=s.campaign_id JOIN users u ON u.id=s.user_id ORDER BY p.created_at DESC`)).rows));
  async function sendPayout(tx,pid,req,retry=false) {
    assertWrites();await assertRunning(tx);
-   const p=(await tx.query('SELECT p.*,s.campaign_id,c.pact_campaign_id FROM payouts p JOIN submissions s ON s.id=p.submission_id JOIN task_campaigns c ON c.id=s.campaign_id WHERE p.id=$1 FOR UPDATE OF p',[pid])).rows[0];
-   requireValue(p,404,'Payout not found');
-   if(['sending','confirmed'].includes(p.status))return {status:p.status,request_key:p.request_key};
-   requireValue(p.status===(retry?'failed':'pending'),409,retry?'Only a conclusively failed payout can be retried':'Use Retry for a failed payout');
-   requireValue(!retry||p.retry_count<3,409,'Three retries exhausted; reconcile the transaction before further action');
-   const job=await enqueue(tx,{key:`payout:${p.id}:${p.retry_count+(retry?1:0)}`,kind:'payout',campaign:p.campaign_id,submission:p.submission_id,payout:p.id,actor:req.user.id,command:chain.ops(`(${c.module}.pay-reward ${quote(p.pact_campaign_id)} ${quote(p.submission_id)} ${quote(p.recipient)})`,{'recipient-keyset':{keys:[p.recipient.slice(2)],pred:'keys-all'}})});
-   await tx.query("UPDATE payouts SET status='sending',request_key=$2,error=NULL,retry_count=retry_count+$3 WHERE id=$1",[pid,job.request_key,retry?1:0]);
-   await audit(tx,req.user.id,retry?'retry':'send','payout',pid,{tx:job.request_key});return {status:'sending',request_key:job.request_key};
+   return queuePayout(tx,chain,c,pid,{actor:req.user.id,retry});
  }
  for(const action of ['send','retry'])app.post(`/api/admin/payouts/:id/${action}`,owner,async(req,res)=>res.json(await idempotent(req,tx=>sendPayout(tx,id(req.params.id),req,action==='retry'))));
  app.post('/api/admin/payouts/send-all',owner,async(req,res)=>res.json(await idempotent(req,async tx=>{
@@ -166,7 +169,7 @@ export function apiRoutes(app,db,chain,c,worker) {
    assertWrites();const input=campaignSchema.parse(req.body);
    res.json(await idempotent(req,async tx=>{
      await assertRunning(tx);const pactId=`campaign-${randomUUID()}`;
-     const row=(await tx.query(`INSERT INTO task_campaigns(pact_campaign_id,sponsor_name,sponsor_account,title,summary,category,template,steps,proof_schema,reward_kda,max_rewards,minutes_estimate,deadline,featured) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,[pactId,input.sponsor_name,c.admin,input.title,input.summary,input.category,input.template,JSON.stringify(input.steps),JSON.stringify(input.proof_schema),input.reward_kda,input.max_rewards,input.minutes_estimate,input.deadline,input.featured])).rows[0];
+     const row=(await tx.query(`INSERT INTO task_campaigns(pact_campaign_id,sponsor_name,sponsor_account,title,summary,category,template,steps,proof_schema,reward_kda,max_rewards,minutes_estimate,deadline,featured,ai_review,ai_criteria) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,[pactId,input.sponsor_name,c.admin,input.title,input.summary,input.category,input.template,JSON.stringify(input.steps),JSON.stringify(input.proof_schema),input.reward_kda,input.max_rewards,input.minutes_estimate,input.deadline,input.featured,input.ai_review,input.ai_criteria||null])).rows[0];
      await audit(tx,req.user.id,'create','campaign',row.id);return {campaign:taskView(row)};
    }));
  });
@@ -230,7 +233,21 @@ export function apiRoutes(app,db,chain,c,worker) {
      const job=request?(await tx.query("SELECT id,status,request_key FROM chain_jobs WHERE kind='pause' AND request_key=$1",[request])).rows[0]||null:null;
      return {...state,job};
    });
-   res.json({...totals,awaiting_review:count,escrow_locked:locked,paused:pause.paused,pause_pending:pause.pending,pause_job:pause.job,worker:{last_success:worker.lastSuccess,error:worker.lastError}});
+   const aiOn=(await db.query("SELECT value FROM settings WHERE key='ai_review_enabled'")).rows[0]?.value===true;
+   res.json({...totals,ai_review_enabled:aiOn,awaiting_review:count,escrow_locked:locked,paused:pause.paused,pause_pending:pause.pending,pause_job:pause.job,worker:{last_success:worker.lastSuccess,error:worker.lastError}});
+ });
+ app.get('/api/admin/ai-review',owner,async(req,res)=>{
+   const on=(await db.query("SELECT value FROM settings WHERE key='ai_review_enabled'")).rows[0]?.value===true;
+   const day=(await db.query(`SELECT count(*) FILTER(WHERE applied='approved') approved,count(*) FILTER(WHERE applied='changes_requested') changes,count(*) FILTER(WHERE applied='escalated') escalated FROM ai_reviews WHERE created_at>now()-interval '24 hours'`)).rows[0];
+   const spent=(await db.query(`SELECT coalesce(sum(p.amount_kda),0) kda FROM payouts p JOIN submissions s ON s.id=p.submission_id WHERE s.ai_reviewed AND p.created_at>now()-interval '24 hours'`)).rows[0].kda;
+   const recent=(await db.query(`SELECT a.submission_id,a.decision,a.confidence,a.applied,a.skip_reason,a.reasons,a.created_at,c.title task FROM ai_reviews a JOIN submissions s ON s.id=a.submission_id JOIN task_campaigns c ON c.id=s.campaign_id ORDER BY a.id DESC LIMIT 50`)).rows;
+   res.json({enabled:on,configured:!!worker.agent,model:c.ai.model,max_reward_kda:c.ai.maxReward,daily_kda:c.ai.dailyKda,min_confidence:c.ai.minConfidence,spent_24h:spent,last_24h:day,last_run:worker.agent?.lastRun||null,last_error:worker.agent?.lastError||null,recent});
+ });
+ app.post('/api/admin/ai-review',owner,async(req,res)=>{
+   const {enabled}=z.object({enabled:z.boolean()}).strict().parse(req.body||{});
+   requireValue(!enabled||worker.agent,409,'Set ANTHROPIC_API_KEY on the server before turning on the AI reviewer');
+   await db.tx(async tx=>{await tx.query("UPDATE settings SET value=$1 WHERE key='ai_review_enabled'",[JSON.stringify(enabled)]);await audit(tx,req.user.id,enabled?'ai_review_on':'ai_review_off','settings','ai_review_enabled');});
+   res.json({enabled});
  });
  app.get('/api/admin/jobs',owner,async(req,res)=>res.json((await db.query('SELECT id,kind,campaign_id,submission_id,payout_id,status,request_key,error,created_at FROM chain_jobs ORDER BY created_at DESC LIMIT 100')).rows));
  app.get('/api/admin/audit',owner,async(req,res)=>res.json((await db.query('SELECT * FROM audit_log ORDER BY id DESC LIMIT 200')).rows));

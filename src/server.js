@@ -7,12 +7,14 @@ import { config } from './config.js';
 import { database } from './db.js';
 import { Chain } from './pact.js';
 import { Worker } from './jobs.js';
+import { ReviewAgent } from './agent.js';
 import { authRoutes } from './auth.js';
 import { apiRoutes } from './api.js';
 import { setupRoutes } from './setup.js';
 import { requireValue } from './validation.js';
 
 export function createApp(db,chain,c,worker=new Worker(db,chain,c)) {
+ if(worker.agent===undefined)worker.agent=c.ai?.apiKey?new ReviewAgent(db,chain,c):null;
  const app=express();app.disable('x-powered-by');if(c.production)app.set('trust proxy',1);
  app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'"],styleSrc:["'self'","'unsafe-inline'","https://fonts.googleapis.com"],fontSrc:["'self'","https://fonts.gstatic.com"],imgSrc:["'self'","data:"],connectSrc:["'self'"],objectSrc:["'none'"],frameAncestors:["'none'"],upgradeInsecureRequests:c.production?[]:null}},strictTransportSecurity:c.production?undefined:false}));
  app.use(express.json({limit:'128kb'}));app.use(cookieParser());
@@ -31,6 +33,10 @@ export function createApp(db,chain,c,worker=new Worker(db,chain,c)) {
  app.get('/transactions/:key',(req,res)=>{
    requireValue(/^[A-Za-z0-9_-]{43}$/.test(req.params.key),400,'Invalid transaction request key');
    res.sendFile(fileURLToPath(new URL('../public/transaction.html',import.meta.url)));
+ });
+ app.get('/ai-receipts/:id',(req,res)=>{
+   requireValue(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.id),400,'Invalid receipt id');
+   res.sendFile(fileURLToPath(new URL('../public/ai-receipt.html',import.meta.url)));
  });
  // Wallet extensions (Ecko) show the site icon in their own popup, a different origin. Helmet's
  // Cross-Origin-Resource-Policy: same-origin blocks that, so allow cross-origin loads for icon files only.

@@ -34,6 +34,14 @@ Connect the configured owner account to access **Create** and **Admin**.
 
 Campaigns end at their deadline. The reconciliation worker returns unused funds to the owner while preserving rewards for submitted work awaiting a decision. Late approval pays the reserved reward; rejection releases it for automatic refund. Keep the worker running and the operations gas account funded. Campaign rewards remain in escrow, separate from operations gas.
 
+### AI reviewer (optional)
+
+Campaigns created with **Let the AI agent review and pay this task** are checked by an AI model (Anthropic Claude). For each submission in review it either approves (and immediately queues the payout from escrow, the same way **Send** does) or requests changes with a note. It never rejects. It hands the submission to the owner's queue when its confidence is below `AI_REVIEW_MIN_CONFIDENCE`, when the proof is identical to another submission, after `AI_REVIEW_MAX_ROUNDS` change requests, or when a limit would be exceeded.
+
+Limits are enforced in code, not by the model: a reward per task of at most `AI_REVIEW_MAX_REWARD_KDA` and a rolling 24-hour total of `AI_REVIEW_DAILY_KDA`. The emergency pause stops it, and **Admin → AI reviewer** has its own on/off switch, which starts off. Every decision, with its confidence and reasons, is stored in `ai_reviews` and shown in Admin; payouts it sends are audited with `agent: true`. Public pages tag these tasks **AI-reviewed** and their payouts **paid by AI agent**.
+
+Submissions are untrusted text. The model is told to treat them as data and to pass anything that tries to instruct it to the owner, but the limits above are what protect the escrow. The agent cannot open links, so it suits tasks that can be judged from the text. To enable: set `ANTHROPIC_API_KEY` (and optionally the other `AI_REVIEW_*` values from `.env.example`), run migrations, restart, then turn it on in Admin.
+
 ### Submission status
 
 | Status | Meaning |
