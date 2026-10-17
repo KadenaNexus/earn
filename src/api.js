@@ -154,6 +154,22 @@ export function apiRoutes(app,db,chain,c,worker) {
      await audit(tx,req.user.id,action,'submission',sid,{note});return {status};
    }));
  });
+ // Undo an approval whose payout has not been sent: nothing is on chain yet
+ // (the reward stays reserved in escrow), so the submission goes back to the
+ // contributor as "changes requested" and the pending payout is removed.
+ app.post('/api/submissions/:id/undo-approval',owner,async(req,res)=>{
+   const sid=z.uuid().parse(req.params.id);const {note}=z.object({note:z.string().trim().min(5).max(2000)}).strict().parse(req.body||{});
+   res.json(await db.tx(async tx=>{
+     const s=(await tx.query('SELECT * FROM submissions WHERE id=$1 FOR UPDATE',[sid])).rows[0];
+     requireValue(s&&s.status==='approved',409,'Only an approved, unsent submission can be reopened');
+     const p=(await tx.query('SELECT * FROM payouts WHERE submission_id=$1 FOR UPDATE',[sid])).rows[0];
+     requireValue(p&&p.status==='pending'&&!p.request_key,409,'This payout was already sent and cannot be undone');
+     requireValue(!(await tx.query('SELECT 1 FROM chain_jobs WHERE payout_id=$1',[p.id])).rowCount,409,'This payout was already sent and cannot be undone');
+     await tx.query('DELETE FROM payouts WHERE id=$1',[p.id]);
+     await tx.query("UPDATE submissions SET status='changes_requested',reviewer_id=$2,review_note=$3,reviewed_at=now() WHERE id=$1",[sid,req.user.id,note]);
+     await audit(tx,req.user.id,'undo_approval','submission',sid,{payout:p.id,note});return {status:'changes_requested'};
+   }));
+ });
  app.get('/api/admin/payouts',owner,async(req,res)=>res.json((await db.query(`SELECT p.*,c.title task,s.id sub,s.ai_reviewed ai,u.kadena_account AS "by" FROM payouts p JOIN submissions s ON s.id=p.submission_id JOIN task_campaigns c ON c.id=s.campaign_id JOIN users u ON u.id=s.user_id ORDER BY p.created_at DESC`)).rows));
  async function sendPayout(tx,pid,req,retry=false) {
    assertWrites();await assertRunning(tx);
