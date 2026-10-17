@@ -175,6 +175,45 @@ async function reconcilePause(marker){
    return false;
  }finally{state.pauseReconciling=false;renderPauseControl();}
 }
+// Edit a funded task's text. Reward, slots and deadline are fixed in escrow.
+function editCampaign(t){
+ if(!t)return;
+ const locked=t.in_progress>0,steps=[...t.steps],fields=structuredClone(t.proof_schema);
+ const draw=()=>{
+   $('#campEdit').innerHTML=`<div class="panel edit-panel"><h3>Edit task</h3><p class="note">Reward (${fmt(t.reward)} KDA per person), ${t.max} slots and the deadline (${date(t.deadline)}) are locked in escrow on chain and can't change here.</p><div class="form">
+   <div class="two"><div class="field"><label for="eSponsor">Sponsor shown on the card</label><input id="eSponsor" value="${esc(eVal('eSponsor',t.sponsor))}"></div><div class="field"><label for="eMins">Estimated time (minutes)</label><input id="eMins" type="number" min="1" max="600" value="${esc(eVal('eMins',t.mins))}"></div></div>
+   <div class="field"><label for="eTitle">Title</label><input id="eTitle" value="${esc(eVal('eTitle',t.title))}"></div>
+   <div class="field"><label for="eDesc">What contributors do</label><textarea id="eDesc">${esc(eVal('eDesc',t.sum))}</textarea></div>
+   <div class="two"><div class="field"><label for="eTpl">Template</label><select id="eTpl">${templates.map(([label])=>`<option ${label===eVal('eTpl',t.type)?'selected':''}>${esc(label)}</option>`).join('')}</select></div><div class="field"><label class="check"><input type="checkbox" id="eFeat" ${eVal('eFeat',t.featured)?'checked':''}> Featured</label></div></div>
+   <div class="field"><label>Instructions <button class="sm" id="eAddStep">Add step</button></label><div class="qb">${steps.map((x,i)=>`<div class="qq"><div class="head"><b>${i+1}</b><input data-estep="${i}" value="${esc(x)}" aria-label="Instruction ${i+1}"><button class="sm bad" data-edel-step="${i}">Remove</button></div></div>`).join('')}</div></div>
+   <div class="field"><label>Proof contributors must submit ${locked?'':'<button class="sm" id="eAddField">Add field</button>'}</label>${locked?`<p class="status-note">${t.in_progress} ${t.in_progress===1?'person is':'people are'} working on this task, so proof fields are locked until their work is reviewed. Everything else can change.</p>`:''}<div class="qb">${fields.map((f,i)=>`<div class="qq"><div class="head"><input data-elabel="${i}" value="${esc(f.label)}" aria-label="Proof field ${i+1} label" ${locked?'disabled':''}><select data-etype="${i}" aria-label="Proof field ${i+1} type" ${locked?'disabled':''}><option value="text" ${f.type==='text'?'selected':''}>Text</option><option value="url" ${f.type==='url'?'selected':''}>Link</option></select>${locked?'':`<button class="sm bad" data-edel-field="${i}">Remove</button>`}</div><div class="two"><label>Minimum characters <input data-emin="${i}" type="number" min="0" max="2000" value="${f.min_len}" ${locked?'disabled':''}></label><div><label><input data-eprivate="${i}" type="checkbox" ${f.private?'checked':''} ${locked?'disabled':''}> Private</label> <label><input data-erequired="${i}" type="checkbox" ${f.required?'checked':''} ${locked?'disabled':''}> Required</label></div></div></div>`).join('')}</div><small>Link fields only accept web addresses. Use Text for anything people write.</small></div>
+   <div class="field"><label class="check"><input type="checkbox" id="eAi" ${eVal('eAi',t.ai)?'checked':''}> Let the AI agent review and pay this task</label></div>
+   <div class="field" id="eAiCritWrap" ${eVal('eAi',t.ai)?'':'hidden'}><label for="eAiCrit">What the AI reviewer should check</label><textarea id="eAiCrit" maxlength="2000">${esc(eVal('eAiCrit',t.ai_criteria||''))}</textarea></div>
+   </div><div class="act"><button class="sm ok" id="eSave">Save changes</button><button class="sm" id="eCancel">Cancel</button></div></div>`;
+   $$('[data-estep]').forEach(i=>i.oninput=()=>{steps[Number(i.dataset.estep)]=i.value;});
+   $$('[data-edel-step]').forEach(b=>b.onclick=()=>{keep();steps.splice(Number(b.dataset.edelStep),1);draw();});
+   $('#eAddStep').onclick=()=>{if(steps.length<20){keep();steps.push('');draw();}};
+   if(!locked){
+     $('#eAddField').onclick=()=>{if(fields.length<20){keep();fields.push({key:'field_'+crypto.randomUUID().replaceAll('-','').slice(0,12),label:'',type:'text',min_len:0,required:true,private:false});draw();}};
+     $$('[data-edel-field]').forEach(b=>b.onclick=()=>{keep();fields.splice(Number(b.dataset.edelField),1);draw();});
+     for(const [attr,key,read] of [['elabel','label',i=>i.value],['etype','type',i=>i.value],['emin','min_len',i=>Number(i.value)],['eprivate','private',i=>i.checked],['erequired','required',i=>i.checked]])$$(`[data-${attr}]`).forEach(i=>i.oninput=i.onchange=()=>{fields[Number(i.dataset[attr])][key]=read(i);});
+   }
+   $('#eAi').onchange=()=>{$('#eAiCritWrap').hidden=!$('#eAi').checked;};
+   $('#eCancel').onclick=()=>{$('#campEdit').innerHTML='';};
+   $('#eSave').onclick=()=>action($('#eSave'),async()=>{
+     const tpl=templates.find(([label])=>label===$('#eTpl').value)||templates[0];
+     const body={title:$('#eTitle').value.trim(),summary:$('#eDesc').value.trim(),sponsor_name:$('#eSponsor').value.trim(),category:tpl[1],template:tpl[0],minutes_estimate:Number($('#eMins').value),steps:steps.map(x=>x.trim()),proof_schema:locked?t.proof_schema:fields,featured:$('#eFeat').checked,ai_review:$('#eAi').checked,...($('#eAi').checked&&$('#eAiCrit').value.trim()?{ai_criteria:$('#eAiCrit').value.trim()}:{})};
+     const r=await api('/admin/campaigns/'+t.id+'/edit',body);
+     notify(r.changed.length?'Task updated. Changes show on the board right away.':'No changes to save.');
+     $('#campEdit').innerHTML='';await renderAdmin();
+   });
+   $('#campEdit').scrollIntoView?.({behavior:'smooth',block:'start'});
+ };
+ // Keep typed values when the step or field list is redrawn.
+ const typed={};const keep=()=>{for(const k of ['eSponsor','eMins','eTitle','eDesc','eTpl','eAiCrit'])if($('#'+k))typed[k]=$('#'+k).value;for(const k of ['eFeat','eAi'])if($('#'+k))typed[k]=$('#'+k).checked;};
+ const eVal=(k,fallback)=>k in typed?typed[k]:fallback;
+ draw();
+}
 async function renderAdmin(){
  const render=++adminRenderVersion,tab=state.tab,current=()=>render===adminRenderVersion&&tab===state.tab&&owner();
  const k=await refreshAdminKpi();if(!k||!current())return;
@@ -190,8 +229,10 @@ async function renderAdmin(){
    $$('[data-send]').forEach(b=>b.onclick=()=>action(b,async()=>{await api('/admin/payouts/'+b.dataset.send+'/'+b.dataset.action,{},{money:true});await renderAdmin();}));
  }else if(state.tab==='camp'){
    const [campaigns,jobs]=await Promise.all([api('/admin/campaigns'),api('/admin/jobs')]);if(!current())return;
-   $('#admBody').innerHTML=`<div class="scroll-x"><table class="tbl"><thead><tr><th>Campaign</th><th>Funded</th><th>Paid</th><th>Remaining</th><th>Refunded</th><th>Status</th><th></th></tr></thead><tbody>${campaigns.map(t=>`<tr><td><b>${esc(t.title)}</b><div class="time">${date(t.deadline)} · ${t.max} slots</div></td><td><b class="kda">${fmt(t.escrow?.funded)}</b></td><td><b class="kda">${fmt(t.escrow?.paid)}</b></td><td><b class="kda">${fmt(t.escrow?.remaining)}</b></td><td><b class="kda">${fmt(t.escrow?.refunded)}</b></td><td>${badge(t.status)}</td><td>${['draft','funding_failed'].includes(t.status)?`<button class="sm ok" data-fund="${t.id}" ${k.paused?'disabled':''}>Fund with Ecko</button>`:txLink(t.funding_tx)}</td></tr>`).join('')||'<tr><td colspan="7" class="empty">Create your first campaign.</td></tr>'}</tbody></table></div><p class="note">After the deadline, unclaimed rewards are refunded automatically. Submitted work stays funded until paid or rejected.</p>${jobs.filter(j=>j.error||['prepared','broadcast'].includes(j.status)).map(j=>`<p class="status-note">${esc(j.kind)} · ${esc(j.status)} · ${txLink(j.request_key)} ${esc(j.error||'Awaiting confirmation')}</p>`).join('')}`;
+   $('#admBody').innerHTML=`<div class="scroll-x"><table class="tbl"><thead><tr><th>Campaign</th><th>Funded</th><th>Paid</th><th>Remaining</th><th>Refunded</th><th>Status</th><th></th></tr></thead><tbody>${campaigns.map(t=>`<tr><td><b>${esc(t.title)}</b><div class="time">${date(t.deadline)} · ${t.max} slots</div></td><td><b class="kda">${fmt(t.escrow?.funded)}</b></td><td><b class="kda">${fmt(t.escrow?.paid)}</b></td><td><b class="kda">${fmt(t.escrow?.remaining)}</b></td><td><b class="kda">${fmt(t.escrow?.refunded)}</b></td><td>${badge(t.status)}${t.hidden?' <span class="badge warn">Hidden</span>':''}</td><td><div class="act">${['draft','funding_failed'].includes(t.status)?`<button class="sm ok" data-fund="${t.id}" ${k.paused?'disabled':''}>Fund with Ecko</button>`:txLink(t.funding_tx)}${t.editable?`<button class="sm" data-edit="${t.id}">Edit</button><button class="sm" data-hide="${t.id}" title="${t.hidden?'Show this task on the board again':'Take this task off the board; unused KDA still returns at the deadline'}">${t.hidden?'Show':'Hide'}</button>`:''}</div></td></tr>`).join('')||'<tr><td colspan="7" class="empty">Create your first campaign.</td></tr>'}</tbody></table></div><div id="campEdit"></div><p class="note">After the deadline, unclaimed rewards are refunded automatically. Submitted work stays funded until paid or rejected.</p>${jobs.filter(j=>j.error||['prepared','broadcast'].includes(j.status)).map(j=>`<p class="status-note">${esc(j.kind)} · ${esc(j.status)} · ${txLink(j.request_key)} ${esc(j.error||'Awaiting confirmation')}</p>`).join('')}`;
    $$('[data-fund]').forEach(b=>b.onclick=()=>action(b,()=>fundCampaign(b.dataset.fund)));
+   $$('[data-edit]').forEach(b=>b.onclick=()=>editCampaign(campaigns.find(t=>String(t.id)===b.dataset.edit)));
+   $$('[data-hide]').forEach(b=>b.onclick=()=>action(b,async()=>{const t=campaigns.find(x=>String(x.id)===b.dataset.hide);await api('/admin/campaigns/'+t.id+'/visibility',{hidden:!t.hidden});notify(t.hidden?'Task is back on the board.':'Task hidden. People already working on it can still submit, and unused KDA returns to your wallet at the deadline.');await renderAdmin();}));
  }else if(state.tab==='ai'){
    const a=await api('/admin/ai-review');if(!current())return;$('#cAiOn').textContent=a.enabled?'On':'Off';
    $('#admBody').innerHTML=`<div class="paybar"><p>${a.configured?`The AI reviewer checks proof on campaigns created with <b>AI review</b> and pays approved work from escrow. It never rejects. Model ${esc(a.model)}.`:'Add ANTHROPIC_API_KEY on the server to use the AI reviewer.'}</p><button class="sm ${a.enabled?'bad':'ok'}" id="aiToggle" ${a.configured||a.enabled?'':'disabled'}>${a.enabled?'Turn off':'Turn on'}</button></div>

@@ -356,6 +356,7 @@ ul.proof li::before{content:"";width:16px;height:16px;border-radius:4px;border:1
 .tbl td{padding:11px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
 .tbl td.num{font:700 15px var(--display);white-space:nowrap}
 .act{display:flex;gap:6px;flex-wrap:wrap}
+.tbl .act{align-items:center}.edit-panel{margin-top:20px}.edit-panel h3{margin:0 0 4px}
 .sm{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:6px 10px;font-size:13px;font-weight:500;white-space:nowrap}
 .sm.ok{background:var(--teal);color:var(--teal-ink);border-color:transparent}
 .sm.bad{color:var(--bad)}
