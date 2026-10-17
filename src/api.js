@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { authenticated, admin } from './auth.js';
 import { audit } from './db.js';
 import { command, signingRequest, quote, decimal, micros, verifySignature } from './pact.js';
-import { campaignSchema, rewardSchema, maxTaskRewardKda, proofData, requireValue, HttpError } from './validation.js';
+import { campaignSchema, campaignEditSchema, proofSignature, rewardSchema, maxTaskRewardKda, proofData, requireValue, HttpError } from './validation.js';
 import { enqueue, unwrap, syncCampaign, pauseState, queuePayout } from './jobs.js';
 
 const id = value => z.coerce.number().int().positive().parse(value);
@@ -16,7 +16,7 @@ export function taskView(c) {
    ends:Math.max(0,Math.ceil((Date.parse(c.deadline)-Date.now())/86400000)),deadline:c.deadline,featured:c.featured,ai:!!c.ai_review,
    steps:c.steps,proof:c.proof_schema.map(f=>f.label),proof_schema:c.proof_schema,status:c.status,
    escrow:snap?{funded:snap.funded,paid:snap.paid,refunded:snap.refunded,remaining:Number(snap.funded)-Number(snap.paid)-Number(snap.refunded),reserved:Number(snap.reward)*Number(snap['reserved-count']),checked_at:c.chain_checked_at}:null,
-   funding_tx:c.funding_tx};
+   funding_tx:c.funding_tx,hidden:!!c.hidden};
 }
 const campaignQuery=`SELECT c.*, (SELECT count(*) FROM submissions s WHERE s.campaign_id=c.id AND s.status IN ('reserving','in_review','changes_requested','approved','paid','payout_failed'))+
  (SELECT count(*) FROM task_starts t WHERE t.campaign_id=c.id AND t.state='started' AND t.expires_at>now()) AS occupied FROM task_campaigns c`;
@@ -41,7 +41,7 @@ export function apiRoutes(app,db,chain,c,worker) {
  app.get('/api/config',(req,res)=>res.json({network:c.network,chain:c.chain,admin_account:c.admin,writes_enabled:c.writes,task_reward_cap_kda:maxTaskRewardKda,campaign_pool_cap_kda:null,slot_hold_minutes:30,explorer:'/transactions/',ai_review_max_reward_kda:c.ai.maxReward}));
  app.get('/api/transactions/:key',async(req,res)=>{const key=z.string().regex(/^[A-Za-z0-9_-]{43}$/).parse(req.params.key);const result=await chain.poll(key);requireValue(result,404,'Transaction has not confirmed yet');res.json(result);});
  app.get('/api/tasks',async(req,res)=>{
-   const rows=(await db.query(`${campaignQuery} WHERE c.status='open' AND c.deadline>now() ORDER BY c.created_at DESC`)).rows;
+   const rows=(await db.query(`${campaignQuery} WHERE c.status='open' AND NOT c.hidden AND c.deadline>now() ORDER BY c.created_at DESC`)).rows;
    let list=rows.map(taskView);
    if(req.query.category)list=list.filter(t=>t.cat===req.query.category);
    if(req.query.q){const q=String(req.query.q).toLowerCase();list=list.filter(t=>(t.title+' '+t.sum+' '+t.sponsor).toLowerCase().includes(q));}
@@ -58,7 +58,7 @@ export function apiRoutes(app,db,chain,c,worker) {
  app.get('/api/campaigns/:id/ledger',async(req,res)=>res.json((await db.query('SELECT event_type,amount_kda,tx,created_at FROM campaign_ledger WHERE campaign_id=$1 ORDER BY id',[id(req.params.id)])).rows));
  app.get('/api/stats',async(req,res)=>{
    const r=(await db.query(`SELECT count(*) AS paid_submissions,coalesce(sum(p.amount_kda),0) AS kda_paid,count(*) FILTER(WHERE s.ai_reviewed) AS ai_paid_submissions,coalesce(sum(p.amount_kda) FILTER(WHERE s.ai_reviewed),0) AS ai_kda_paid FROM payouts p JOIN submissions s ON s.id=p.submission_id WHERE p.status='confirmed'`)).rows[0];
-   const campaigns=(await db.query("SELECT reward_kda,max_rewards,chain_snapshot FROM task_campaigns WHERE status='open' AND deadline>now()")).rows;
+   const campaigns=(await db.query("SELECT reward_kda,max_rewards,chain_snapshot FROM task_campaigns WHERE status='open' AND NOT hidden AND deadline>now()")).rows;
    let open=0n;for(const t of campaigns)if(t.chain_snapshot)open+=micros(t.reward_kda)*BigInt(Math.max(0,t.max_rewards-Number(t.chain_snapshot['paid-count'])-Number(t.chain_snapshot['reserved-count'])));
    res.json({...r,open_rewards:Number(open)/1e6});
  });
@@ -99,6 +99,7 @@ export function apiRoutes(app,db,chain,c,worker) {
      await assertRunning(tx);
      const row=(await tx.query('SELECT * FROM task_campaigns WHERE id=$1 FOR UPDATE',[cid])).rows[0];
      requireValue(row?.status==='open'&&Date.parse(row.deadline)>Date.now(),409,'Campaign is not accepting work');
+     requireValue(!row.hidden,409,'This task is no longer accepting new contributors');
      const mine=(await tx.query('SELECT s.status FROM submissions s WHERE campaign_id=$1 AND user_id=$2',[cid,req.user.id])).rows[0];
      requireValue(!mine||mine.status==='reservation_failed',409,'You already submitted this task');
      const existing=(await tx.query('SELECT * FROM task_starts WHERE campaign_id=$1 AND user_id=$2',[cid,req.user.id])).rows[0];
@@ -164,7 +165,41 @@ export function apiRoutes(app,db,chain,c,worker) {
    const rows=(await tx.query("SELECT id FROM payouts WHERE status='pending' ORDER BY id LIMIT 100 FOR UPDATE")).rows;
    const sent=[];for(const p of rows)sent.push(await sendPayout(tx,p.id,req));return {sent};
  })));
- app.get('/api/admin/campaigns',owner,async(req,res)=>res.json((await db.query(`${campaignQuery} ORDER BY c.created_at DESC`)).rows.map(taskView)));
+ // Work in progress pins the proof fields: a started slot, or proof that is
+ // still reserving, in review or being revised against the current fields.
+ const inProgress=`(SELECT count(*) FROM submissions s WHERE s.campaign_id=c.id AND s.status IN ('reserving','in_review','changes_requested'))+
+   (SELECT count(*) FROM task_starts t WHERE t.campaign_id=c.id AND t.state='started' AND t.expires_at>now())`;
+ app.get('/api/admin/campaigns',owner,async(req,res)=>res.json((await db.query(`SELECT q.*,(SELECT ${inProgress} FROM task_campaigns c WHERE c.id=q.id) AS in_progress FROM (${campaignQuery}) q ORDER BY q.created_at DESC`)).rows
+   .map(r=>({...taskView(r),ai_criteria:r.ai_criteria||'',in_progress:Number(r.in_progress),editable:['draft','funding','funding_failed','open'].includes(r.status)}))));
+ app.post('/api/admin/campaigns/:id/edit',owner,async(req,res)=>{
+   const cid=id(req.params.id);const input=campaignEditSchema.parse(req.body);
+   res.json(await db.tx(async tx=>{
+     const row=(await tx.query('SELECT * FROM task_campaigns WHERE id=$1 FOR UPDATE',[cid])).rows[0];
+     requireValue(row,404,'Campaign not found');
+     requireValue(['draft','funding','funding_failed','open'].includes(row.status),409,'This task has ended and can no longer be edited');
+     const fieldsChanged=proofSignature(row.proof_schema)!==proofSignature(input.proof_schema);
+     if(fieldsChanged){
+       const busy=Number((await tx.query(`SELECT ${inProgress} AS n FROM task_campaigns c WHERE c.id=$1`,[cid])).rows[0].n);
+       requireValue(busy===0,409,`Proof fields can't change while ${busy} ${busy===1?'person is':'people are'} working on this task. Other edits are fine; try the proof fields again once their work is reviewed.`);
+     }
+     const changed=['title','summary','sponsor_name','category','template','minutes_estimate','featured','ai_review'].filter(k=>row[k]!==input[k]);
+     if(JSON.stringify(row.steps)!==JSON.stringify(input.steps))changed.push('steps');
+     if(fieldsChanged)changed.push('proof_schema');
+     if((row.ai_criteria||'')!==(input.ai_criteria||''))changed.push('ai_criteria');
+     const updated=(await tx.query(`UPDATE task_campaigns SET title=$2,summary=$3,sponsor_name=$4,category=$5,template=$6,minutes_estimate=$7,steps=$8,proof_schema=$9,featured=$10,ai_review=$11,ai_criteria=$12,updated_at=now() WHERE id=$1 RETURNING *`,
+       [cid,input.title,input.summary,input.sponsor_name,input.category,input.template,input.minutes_estimate,JSON.stringify(input.steps),JSON.stringify(input.proof_schema),input.featured,input.ai_review,input.ai_criteria||null])).rows[0];
+     await audit(tx,req.user.id,'edit','campaign',cid,{changed});
+     return {campaign:taskView(updated),changed};
+   }));
+ });
+ app.post('/api/admin/campaigns/:id/visibility',owner,async(req,res)=>{
+   const cid=id(req.params.id);const {hidden}=z.object({hidden:z.boolean()}).strict().parse(req.body||{});
+   res.json(await db.tx(async tx=>{
+     const row=(await tx.query('UPDATE task_campaigns SET hidden=$2,updated_at=now() WHERE id=$1 RETURNING id,hidden',[cid,hidden])).rows[0];
+     requireValue(row,404,'Campaign not found');
+     await audit(tx,req.user.id,hidden?'hide':'unhide','campaign',cid);return row;
+   }));
+ });
  app.post('/api/admin/campaigns',owner,async(req,res)=>{
    assertWrites();const input=campaignSchema.parse(req.body);
    res.json(await idempotent(req,async tx=>{

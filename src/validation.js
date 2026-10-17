@@ -16,6 +16,16 @@ export const campaignSchema = z.object({
  steps:z.array(text(1,500)).min(1).max(20),proof_schema:z.array(field).min(1).max(20),featured:z.boolean().default(false),
  ai_review:z.boolean().default(false),ai_criteria:z.string().trim().max(2000).optional(),
 }).strict().refine(c=>new Set(c.proof_schema.map(f=>f.key)).size===c.proof_schema.length,'Proof field keys must be unique');
+// Owner edits after creation: only fields that live in the database. Reward,
+// slots, sponsor account and deadline are fixed by the funded escrow on chain.
+export const campaignEditSchema = z.object({
+ title:text(8,180),summary:text(20,3000),sponsor_name:text(2,100),category:z.enum(categories),template:z.enum(templates),
+ minutes_estimate:z.number().int().min(1).max(600),
+ steps:z.array(text(1,500)).min(1).max(20),proof_schema:z.array(field).min(1).max(20),featured:z.boolean().default(false),
+ ai_review:z.boolean().default(false),ai_criteria:z.string().trim().max(2000).optional(),
+}).strict().refine(c=>new Set(c.proof_schema.map(f=>f.key)).size===c.proof_schema.length,'Proof field keys must be unique');
+// Compare proof fields regardless of JSONB key order.
+export const proofSignature = schema => JSON.stringify((schema||[]).map(f=>[f.key,f.label,f.type,Number(f.min_len||0),f.required!==false,!!f.private]));
 export function safeUrl(value) { try { const u=new URL(value); return ['http:','https:'].includes(u.protocol)&&!u.username&&!u.password; } catch { return false; } }
 export function proofData(schema,body) {
  const { proof, public_consent=false }=z.object({proof:z.record(z.string(),z.string().max(12000)),public_consent:z.boolean().optional()}).strict().parse(body);
