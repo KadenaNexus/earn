@@ -47,16 +47,27 @@ test('Prompt treats submissions as data and decisions are clamped', () => {
  assert.equal(proofHash({ b: 1, a: 2 }), proofHash({ a: 2, b: 1 }));
 });
 
-test('Anthropic client forces the review tool', async () => {
- let sent;
- const review = anthropicReviewer({ apiKey: 'k', model: 'm' }, async (url, init) => {
-   sent = { url, ...init, body: JSON.parse(init.body) };
-   return { ok: true, json: async () => ({ content: [{ type: 'tool_use', name: 'record_review', input: { decision: 'approve', confidence: 0.9, reasons: 'r', note_to_contributor: 'n' } }] }) };
- });
+test('Anthropic client offers the review tool with auto choice and never forces it', async () => {
+ const sent = [];
+ const reply = content => ({ ok: true, json: async () => ({ content }) });
+ const tool = { type: 'tool_use', name: 'record_review', input: { decision: 'approve', confidence: 0.9, reasons: 'r', note_to_contributor: 'n' } };
+ const review = anthropicReviewer({ apiKey: 'k', model: 'm' }, async (url, init) => { sent.push({ url, ...init, body: JSON.parse(init.body) }); return reply([{ type: 'text', text: 'Looks good.' }, tool]); });
  assert.equal((await review({ system: 's', user: 'u' })).decision, 'approve');
- assert.equal(sent.url, 'https://api.anthropic.com/v1/messages');
- assert.equal(sent.headers['x-api-key'], 'k');
- assert.deepEqual(sent.body.tool_choice, { type: 'tool', name: 'record_review' });
+ assert.equal(sent.length, 1);
+ assert.equal(sent[0].url, 'https://api.anthropic.com/v1/messages');
+ assert.equal(sent[0].headers['x-api-key'], 'k');
+ // Current models reject tool_choice "tool" and "any".
+ assert.deepEqual(sent[0].body.tool_choice, { type: 'auto' });
+ assert.equal(sent[0].body.tools[0].name, 'record_review');
+ // Text-only answer: asked once more, then the tool result is used.
+ const asked = [];
+ const nudged = anthropicReviewer({ apiKey: 'k', model: 'm' }, async (url, init) => { asked.push(JSON.parse(init.body)); return asked.length === 1 ? reply([{ type: 'text', text: 'I think it is fine.' }]) : reply([tool]); });
+ assert.equal((await nudged({ system: 's', user: 'u' })).decision, 'approve');
+ assert.equal(asked.length, 2); assert.equal(asked[1].messages.length, 3); assert.match(asked[1].messages[2].content, /record_review/);
+ // Still no tool call: the owner decides, nothing is approved.
+ const silent = anthropicReviewer({ apiKey: 'k', model: 'm' }, async () => reply([{ type: 'text', text: 'Approve!' }]));
+ const fallback = await silent({ system: 's', user: 'u' });
+ assert.equal(fallback.decision, 'escalate'); assert.equal(fallback.confidence, 0);
  const failing = anthropicReviewer({ apiKey: 'k', model: 'm' }, async () => ({ ok: false, status: 529, json: async () => ({ error: { message: 'overloaded' } }) }));
  await assert.rejects(failing({ system: 's', user: 'u' }), /529/);
 });
