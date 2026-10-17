@@ -97,19 +97,32 @@ Call record_review with your decision.`;
  return { system, user };
 }
 
-// Minimal Anthropic Messages API client with a forced tool call.
+// Minimal Anthropic Messages API client. Current models do not accept a forced
+// tool_choice ("tool"/"any"), so the tool is offered with "auto" and the prompt
+// asks for it. If the model answers in text instead, it is asked once more;
+// if it still does not call the tool, the submission goes to the owner.
 export function anthropicReviewer(ai, fetchImpl = fetch) {
- return async ({ system, user }) => {
+ const ask = async (system, messages) => {
    const res = await fetchImpl('https://api.anthropic.com/v1/messages', {
-     method: 'POST', signal: AbortSignal.timeout(60000),
+     method: 'POST', signal: AbortSignal.timeout(90000),
      headers: { 'content-type': 'application/json', 'x-api-key': ai.apiKey, 'anthropic-version': '2023-06-01' },
-     body: JSON.stringify({ model: ai.model, max_tokens: 800, system, tools: [TOOL], tool_choice: { type: 'tool', name: TOOL.name }, messages: [{ role: 'user', content: user }] }),
+     body: JSON.stringify({ model: ai.model, max_tokens: 4000, system, tools: [TOOL], tool_choice: { type: 'auto' }, messages }),
    });
    const body = await res.json().catch(() => ({}));
    if (!res.ok) throw new Error(`Anthropic API ${res.status}: ${body?.error?.message || 'request failed'}`);
-   const call = body.content?.find(b => b.type === 'tool_use' && b.name === TOOL.name);
-   if (!call) throw new Error('Model did not return a review decision');
-   return call.input;
+   return body;
+ };
+ const callOf = body => body.content?.find(b => b.type === 'tool_use' && b.name === TOOL.name);
+ return async ({ system, user }) => {
+   const messages = [{ role: 'user', content: user }];
+   const first = await ask(system, messages);
+   const call = callOf(first);
+   if (call) return call.input;
+   const retry = await ask(system, [...messages, { role: 'assistant', content: first.content?.length ? first.content : [{ type: 'text', text: '(no answer)' }] },
+     { role: 'user', content: 'Record your decision now by calling the record_review tool. Do not answer in text.' }]);
+   const second = callOf(retry);
+   if (second) return second.input;
+   return { decision: 'escalate', confidence: 0, reasons: 'The model did not return a structured decision, so this goes to the owner.', note_to_contributor: '' };
  };
 }
 
