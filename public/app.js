@@ -10,6 +10,7 @@ const AI_REASON={low_confidence:'Low confidence',duplicate:'Same proof as anothe
 const labels={started:'Started',expired:'Slot expired',reserving:'Confirming reservation',reservation_failed:'Reservation failed',in_review:'In review',changes_requested:'Changes requested',approved:'Approved',rejected:'Rejected',paid:'Paid',payout_failed:'Payout failed',pending:'Pending',sending:'Sending',confirmed:'Confirmed',failed:'Failed',draft:'Draft',funding:'Funding',funding_failed:'Funding failed',open:'Open',ended:'Ended, settling work',settled:'Settled'};
 const badge=s=>`<span class="badge ${['paid','confirmed','open'].includes(s)?'ok':['failed','payout_failed','rejected','reservation_failed'].includes(s)?'bad':'warn'}">${esc(labels[s]||s)}</span>`;
 function notify(message){$('#notice').className='notice';$('#notice').textContent=message;$('#notice').hidden=false;clearTimeout(notify.timer);notify.timer=setTimeout(()=>$('#notice').hidden=true,9000);}
+const ROBOT='<svg class="ai-bot" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false"><path d="M12 2.5v3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="2.6" r="1.6" fill="currentColor"/><rect x="3.5" y="6.5" width="17" height="13" rx="4" fill="currentColor"/><circle class="ai-bot-face" cx="9" cy="12.2" r="1.9"/><circle class="ai-bot-face" cx="15" cy="12.2" r="1.9"/><path class="ai-bot-mouth" d="M9.2 16.2h5.6" stroke-width="1.6" stroke-linecap="round"/><path d="M1.8 11v4M22.2 11v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
 function txLink(key){return key&&/^[\w-]{43}$/.test(key)?`<a href="${esc(state.config.explorer+encodeURIComponent(key)+'?chain=1')}" target="_blank" rel="noopener noreferrer" title="${esc(key)}">${esc(short(key))}</a>`:'';}
 function link(label,url){try{const u=new URL(url);if(!['http:','https:'].includes(u.protocol)||u.username||u.password)return '';return `<a href="${esc(u.href)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>`;}catch{return '';}}
 async function api(path,body,options={}){
@@ -268,11 +269,11 @@ let refreshing=false;
 async function refresh(){
  if(refreshing)return;refreshing=true;
  try{
-   const [tasks,stats,feed,work,board]=await Promise.all([api('/tasks'),api('/stats'),api('/payouts/recent'),api('/work'),api('/leaderboard')]);
+   const [tasks,stats,feed,work,board]=await Promise.all([api('/tasks'),api('/stats'),api('/payouts/recent?limit=8'),api('/work'),api('/leaderboard')]);
    state.tasks=tasks;state.work=work;state.board=board;renderTasks();renderWork();renderBoard();
    $('#openRewards').textContent=fmt(stats.open_rewards);$('#sPaid').textContent=fmt(stats.paid_submissions);$('#sKda').textContent=fmt(stats.kda_paid);
    const aiPaid=Number(stats.ai_paid_submissions||0);$('#sAi').textContent=aiPaid;$('#sAiWrap').hidden=!aiPaid;$('#aiLine').hidden=!(aiPaid||tasks.some(t=>t.ai));
-   $('#feed').innerHTML=feed.length?feed.map(p=>`<li><span class="who">${esc(p.who)}</span><b class="kda">${fmt(p.reward)}</b><span class="what">${esc(p.type)}, sponsored by ${esc(p.sponsor)}${p.ai?` · <a href="/ai-receipts/${esc(p.receipt)}" title="See the AI receipt">reviewed &amp; paid by AI agent</a>`:''}</span><span class="tx">${txLink(p.tx)}</span></li>`).join(''):'<li class="empty">No confirmed payouts yet.</li>';
+   $('#feed').innerHTML=feed.length?feed.map(p=>`<li><span class="who">${esc(p.who)}</span><b class="kda">${fmt(p.reward)}</b><span class="what">${esc(p.type)}, sponsored by ${esc(p.sponsor)}</span><span class="tx">${txLink(p.tx)}</span>${p.ai?`<a class="badge ai feed-ai" href="/ai-receipts/${esc(p.receipt)}" title="See the AI review receipt">${ROBOT} Reviewed &amp; paid by AI agent</a>`:''}</li>`).join(''):'<li class="empty">No confirmed payouts yet.</li>';
    const before=state.mine.find(m=>String(m.campaign_id)===String(state.cur?.id))?.s;await loadPersonal();const after=state.mine.find(m=>String(m.campaign_id)===String(state.cur?.id))?.s;
    if(state.drawer&&before!==after&&!$('#proofForm'))renderDrawer();
    // Keep an open edit form: refresh only the numbers while it is open.

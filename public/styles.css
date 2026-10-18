@@ -109,7 +109,11 @@ main.wrap{padding:56px 20px 120px}
 .feed h2 small{font:500 12px var(--body);color:var(--teal-text);display:flex;align-items:center;gap:6px}
 .feed h2 small::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--teal);animation:pulse 2s infinite}
 @keyframes pulse{50%{opacity:.3}}
-.feed ul{list-style:none;margin:10px 0 0;padding:0;overflow:hidden;flex:1}
+.feed ul{list-style:none;margin:10px 0 0;padding:0;overflow:hidden;flex:1;min-height:0;-webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 48px),transparent);mask-image:linear-gradient(to bottom,#000 calc(100% - 48px),transparent)}
+/* The feed fills the hero's height without setting it: extra rows fade out at the bottom. */
+.hero .feed{contain:size}
+.feed li>.kda{justify-self:end}
+.feed .feed-ai{grid-column:1/-1;justify-self:start;margin-top:4px;font-size:12px;gap:5px;text-decoration:none}
 .feed li{display:grid;grid-template-columns:1fr auto;gap:2px 12px;padding:10px 0;border-top:1px solid var(--line)}
 .feed li:first-child{border-top:0}
 .feed li.new{animation:slidein .5s ease-out}
@@ -410,6 +414,7 @@ nav.bottom{display:none}
   nav.primary,.level{display:none}
   .top .wrap{justify-content:space-between}
   .hero,.create{grid-template-columns:1fr}
+  .hero .feed{contain:none}.feed ul{-webkit-mask-image:none;mask-image:none}.feed li:nth-child(n+5){display:none}
   .task.featured{grid-column:auto}
   .search input{width:100%}
   .search{width:100%}
