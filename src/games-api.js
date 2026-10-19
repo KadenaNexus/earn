@@ -17,7 +17,7 @@ import { quote } from './pact.js';
 import { requireValue } from './validation.js';
 import { enqueue, pauseState } from './jobs.js';
 import { campaignQuery, taskView } from './api.js';
-import { GAMES, GAME_KINDS, newRound, checkRound } from './games.js';
+import { GAMES, GAME_KINDS, INTERACTIVE, newRound, checkRound, moveRound, publicState } from './games.js';
 
 const DISPOSABLE = new Set(['mailinator.com', 'guerrillamail.com', 'guerrillamail.net', 'sharklasers.com', '10minutemail.com', 'temp-mail.org', 'tempmail.com', 'tempmail.net',
   'yopmail.com', 'trashmail.com', 'getnada.com', 'dispostable.com', 'maildrop.cc', 'fakeinbox.com', 'throwawaymail.com', 'mintemail.com', 'emailondeck.com', 'moakt.com', 'mohmal.com', 'tempail.com', 'burnermail.io', 'mailnesia.com', 'spamgourmet.com', 'tmpmail.org', 'tmail.ws']);
@@ -42,7 +42,7 @@ export function resendSender(mail, fetchImpl = fetch) {
   };
 }
 
-const sessionView = (s, attemptsLeft) => ({ id: s.id, campaign_id: Number(s.campaign_id), game: s.game, puzzle: s.puzzle, started_at: s.started_at, expires_at: s.expires_at, status: s.status, attempts_left: attemptsLeft });
+const sessionView = (s, attemptsLeft) => ({ id: s.id, campaign_id: Number(s.campaign_id), game: s.game, puzzle: s.puzzle, state: publicState(s.game, s.secret, s.state), started_at: s.started_at, expires_at: s.expires_at, status: s.status, attempts_left: attemptsLeft });
 const roundView = r => ({ ...taskView(r), game: r.game, game_name: GAMES[r.game]?.name, minutes: GAMES[r.game]?.minutes });
 
 export function gameRoutes(app, db, chain, c, { sendMail } = {}) {
@@ -152,8 +152,8 @@ export function gameRoutes(app, db, chain, c, { sendMail } = {}) {
         start = (await tx.query(`INSERT INTO task_starts(campaign_id,user_id,expires_at) VALUES($1,$2,least(now()+interval '30 minutes',$3)) ON CONFLICT(campaign_id,user_id) DO UPDATE SET state='started',started_at=now(),expires_at=excluded.expires_at RETURNING *`, [cid, req.user.id, row.deadline])).rows[0];
       }
       const round = newRound(row.game);
-      const s = (await tx.query(`INSERT INTO game_sessions(id,campaign_id,user_id,game,puzzle,secret,expires_at) VALUES($1,$2,$3,$4,$5,$6,least(now()+make_interval(mins=>$7::int),$8)) RETURNING *`,
-        [randomUUID(), cid, req.user.id, row.game, JSON.stringify(round.puzzle), JSON.stringify(round.secret), GAMES[row.game].minutes, start.expires_at])).rows[0];
+      const s = (await tx.query(`INSERT INTO game_sessions(id,campaign_id,user_id,game,puzzle,secret,state,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,least(now()+make_interval(mins=>$8::int),$9)) RETURNING *`,
+        [randomUUID(), cid, req.user.id, row.game, JSON.stringify(round.puzzle), JSON.stringify(round.secret), round.state ? JSON.stringify(round.state) : null, GAMES[row.game].minutes, start.expires_at])).rows[0];
       await audit(tx, req.user.id, 'game_start', 'game_session', s.id, { campaign: cid, game: row.game, attempt: used + 1 });
       return sessionView(s, c.games.attempts - used - 1);
     }));
@@ -163,6 +163,33 @@ export function gameRoutes(app, db, chain, c, { sendMail } = {}) {
     const s = (await db.query('SELECT * FROM game_sessions WHERE id=$1 AND user_id=$2', [z.uuid().parse(req.params.sid), req.user.id])).rows[0];
     requireValue(s, 404, 'Round not found');
     res.json(sessionView(s, c.games.attempts - await attemptsUsed(db, s.campaign_id, req.user.id)));
+  });
+
+  // A missed round uses up a try; when tries run out the reward slot is freed.
+  async function missed(tx, s, play, message, status = 'failed') {
+    const left = c.games.attempts - await attemptsUsed(tx, s.campaign_id, s.user_id);
+    await tx.query('UPDATE game_sessions SET status=$2,finished_at=now(),play=coalesce($3,play),result=$4 WHERE id=$1', [s.id, status, play ? JSON.stringify(play) : null, JSON.stringify({ message })]);
+    if (left <= 0) await tx.query("UPDATE task_starts SET state='out_of_attempts' WHERE campaign_id=$1 AND user_id=$2 AND state='started'", [s.campaign_id, s.user_id]);
+    await audit(tx, s.user_id, 'game_failed', 'game_session', s.id, { message });
+    return { solved: false, message, attempts_left: left };
+  }
+
+  // One move in Kadena Word, Memory Match or Minesweeper. The hidden part stays on the server.
+  app.post('/api/games/sessions/:sid/move', authenticated, async (req, res) => {
+    const sid = z.uuid().parse(req.params.sid); assertWrites();
+    const { move } = z.object({ move: z.record(z.string(), z.unknown()) }).strict().parse(req.body || {});
+    res.json(await db.tx(async tx => {
+      const s = (await tx.query('SELECT *,expires_at<now() AS late FROM game_sessions WHERE id=$1 AND user_id=$2 FOR UPDATE', [sid, req.user.id])).rows[0];
+      requireValue(s, 404, 'Round not found');
+      requireValue(INTERACTIVE.includes(s.game), 400, 'This game has no moves');
+      requireValue(s.status === 'playing', 409, 'This round is already finished');
+      if (s.late) return { ...(await missed(tx, s, null, 'Time ran out for this puzzle.', 'expired')), over: true };
+      const r = moveRound(s.game, s.secret, s.state, move);
+      requireValue(!r.error, 400, r.error);
+      await tx.query('UPDATE game_sessions SET secret=$2,state=$3 WHERE id=$1', [sid, JSON.stringify(s.secret), JSON.stringify(s.state)]);
+      if (r.lost) return { ...r, ...(await missed(tx, s, null, s.game === 'mines' ? 'You hit a mine.' : 'Out of guesses.')), over: true };
+      return r;
+    }));
   });
 
   app.post('/api/games/sessions/:sid/finish', authenticated, async (req, res) => {
@@ -183,7 +210,7 @@ export function gameRoutes(app, db, chain, c, { sendMail } = {}) {
         await tx.query("UPDATE game_sessions SET status='expired',finished_at=now() WHERE id=$1", [sid]);
         return out('Time ran out for this puzzle.');
       }
-      const r = checkRound(s.game, s.puzzle, s.secret, play, s.seconds);
+      const r = checkRound(s.game, s.puzzle, s.secret, play, s.seconds, s.state);
       if (!r.solved) {
         await tx.query("UPDATE game_sessions SET status='failed',finished_at=now(),play=$2,result=$3 WHERE id=$1", [sid, JSON.stringify(play), JSON.stringify({ message: r.message })]);
         await audit(tx, req.user.id, 'game_failed', 'game_session', sid, { message: r.message });

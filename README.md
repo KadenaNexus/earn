@@ -44,14 +44,14 @@ Submissions are untrusted text. The model is told to treat them as data and to p
 
 ### Kadena Nexus Games
 
-`/games.html` hosts four games: Sliding Tiles, Kadena Quiz, Logic Grid (6×6) and Riddles. A game round is an ordinary funded campaign with a game kind, opened by the owner from the owner card on the Games page (prize per win, number of prizes, hours open). Players need a connected wallet. Setting `GAMES_REQUIRE_EMAIL=true` also requires a confirmed email (one inbox per wallet; Gmail dots and +tags are normalized, temporary-inbox domains are refused); it is off by default because the AI games budget already caps daily payouts.
+`/games.html` hosts eight games: Sliding Tiles, Kadena Quiz, Logic Grid (6×6), Riddles, Kadena Word (5 letters, 6 tries), Memory Match (8 pairs), Minesweeper (8×8, 10 mines) and Spot the Pact Bug. Word, Memory and Minesweeper are played move by move against the server (`POST /api/games/sessions/:id/move`), which keeps the hidden word, card layout and mines; Minesweeper places its mines after the first click so it is always safe. A game round is an ordinary funded campaign with a game kind, opened by the owner from the owner card on the Games page (prize per win, number of prizes, hours open). Players need a connected wallet. Setting `GAMES_REQUIRE_EMAIL=true` also requires a confirmed email (one inbox per wallet; Gmail dots and +tags are normalized, temporary-inbox domains are refused); it is off by default because the AI games budget already caps daily payouts.
 
 1. **Play** holds a reward slot like **Start task** and gives the player a puzzle generated on the server. Quiz and riddle answers never reach the browser.
 2. **Finish** is checked on the server with server-measured time. A miss uses one of `GAMES_ATTEMPTS_PER_ROUND` tries (each with a fresh puzzle). A win writes the proof itself (a public result line and a private play record) and reserves the prize in escrow, exactly like a task submission.
 3. The AI agent reviews how the round was played (approve or hand to the owner; it never asks for changes on a game and never rejects). Wins with bot-like signals (faster than a person, machine-like move timing, a grid pasted rather than typed) go to the owner without asking the model.
 4. Limits in code: one win per wallet per round, `GAMES_WINS_PER_WALLET_PER_DAY` wins per game per 24 h, and the agent's own games budget (`GAMES_MAX_REWARD_KDA` per win, `GAMES_DAILY_KDA` per 24 h), separate from the task limits. Over-limit wins wait in the owner's review queue.
 
-The generic task endpoints refuse game rounds, so game proof can only come from a finished, server-checked round. Tiles and Logic Grid have free practice that runs in the browser. The email requirement needs `RESEND_API_KEY` and `EMAIL_FROM`.
+The generic task endpoints refuse game rounds, so game proof can only come from a finished, server-checked round. Tiles, Logic Grid, Memory Match and Minesweeper have free practice that runs in the browser. The email requirement needs `RESEND_API_KEY` and `EMAIL_FROM`.
 
 ### Submission status
 

@@ -198,3 +198,61 @@ test('Email is optional by default: a signed-in wallet can play, and the daily c
    assert.match((await u.call('/games/' + cid2 + '/play', {})).data.error, /today/);
  } finally { await t.close(); }
 });
+
+test('New games: Word, Memory, Minesweeper and Pact Bug win through the server and keep their secrets', async () => {
+ const t = await setup('ke_games_more', false);
+ const { MINES } = await import('../public/games-core.js');
+ try {
+   const solve = async (game, play) => {
+     const cid = await t.round(game);
+     const u = await client(t.base, testKey());
+     const s = (await u.call('/games/' + cid + '/play', {})).data;
+     assert.ok(s.id, JSON.stringify(s));
+     const raw = JSON.stringify(s);
+     await t.db.query("UPDATE game_sessions SET started_at=now()-interval '2 minutes' WHERE id=$1", [s.id]);
+     const { secret } = await t.secret(s.id);
+     return { u, s, raw, secret, cid, finish: (p = {}) => u.call('/games/sessions/' + s.id + '/finish', { play: p }), move: m => u.call('/games/sessions/' + s.id + '/move', { move: m }) };
+   };
+   // Kadena Word: the word never reaches the browser; a wrong guess gets colors, the right one solves.
+   const w = await solve('word');
+   assert.ok(!w.raw.includes(w.secret.word));
+   const wrong = w.secret.word === 'zebra' ? 'apple' : 'zebra';
+   const g1 = await w.move({ guess: wrong, t: 1000 }); assert.equal(g1.data.score.length, 5); assert.equal(g1.data.solved, false);
+   assert.equal((await w.move({ guess: 'ab' })).status, 400);
+   assert.equal((await w.move({ guess: w.secret.word, t: 9000 })).data.solved, true);
+   const ww = await w.finish(); assert.equal(ww.data.solved, true, JSON.stringify(ww.data)); assert.match(ww.data.summary, /in 2 tries/);
+   // Memory Match: layout hidden; flipping the real pairs solves.
+   const m = await solve('memory');
+   assert.ok(!m.raw.includes('"cards":["'), 'card layout is not sent');
+   const cards = m.secret.cards, pairs = [...new Set(cards)].map(sym => cards.map((x, i) => x === sym ? i : -1).filter(i => i >= 0));
+   assert.equal((await m.move({ card: 99 })).status, 400);
+   const one = (await m.move({ card: pairs[0][0], t: 1500 })).data; assert.equal(one.card.s, cards[pairs[0][0]]);
+   assert.equal((await m.move({ card: pairs[0][0] })).status, 400, 'the same card cannot be its own pair');
+   let last = (await m.move({ card: pairs[0][1], t: 2300 })).data; assert.equal(last.match, true);
+   let k = 0; for (const [a, b] of pairs.slice(1)) { await m.move({ card: a, t: 3000 + 900 * (k++) + (k % 3) * 170 }); last = (await m.move({ card: b, t: 3400 + 900 * k + (k % 2) * 210 })).data; }
+   assert.equal(last.solved, true);
+   const mw = await m.finish(); assert.equal(mw.data.solved, true);
+   const mflag = (await t.db.query('SELECT proof_json FROM submissions WHERE id=$1', [mw.data.submission_id])).rows[0].proof_json;
+   assert.match(JSON.parse(mflag.play).flags.join(' '), /8 flips/, 'a perfect run is flagged for the owner');
+   // Minesweeper: mines are placed after the first click (first click safe), opening every safe square solves.
+   const n = await solve('mines');
+   const first = await n.move({ cell: 27, t: 500 }); assert.ok(first.data.opened.length >= 1, JSON.stringify(first.data));
+   const { secret: ms } = await t.secret(n.s.id); assert.ok(!ms.mines.includes(27));
+   for (let i = 0, k2 = 1; i < MINES.w * MINES.h; i++) if (!ms.mines.includes(i)) { const r = await n.move({ cell: i, t: 500 + 700 * k2++ }); if (r.data.solved) break; }
+   const nw = await n.finish(); assert.equal(nw.data.solved, true, JSON.stringify(nw.data));
+   // Hitting a mine ends the try.
+   const boom = await solve('mines');
+   await boom.move({ cell: 0, t: 100 }); const { secret: bs } = await t.secret(boom.s.id);
+   const hit = await boom.move({ cell: bs.mines[0], t: 900 });
+   assert.equal(hit.data.lost, true); assert.equal(hit.data.over, true); assert.equal(hit.data.attempts_left, 2);
+   assert.equal((await boom.move({ cell: 1 })).status, 409);
+   // Spot the Pact Bug: correct option plus an explanation wins; the answer index is not sent.
+   const p = await solve('pactbug');
+   assert.ok(p.s.puzzle.code.includes('defun') || p.s.puzzle.code.includes('defcap')); assert.ok(!('answer' in p.s.puzzle));
+   const pw = await p.finish({ choice: p.secret.answer, written: 'The guard is never checked, so a stranger can move funds that are not theirs.' });
+   assert.equal(pw.data.solved, true);
+   await t.ticks(5);
+   const paid = (await t.db.query("SELECT count(*) n FROM submissions s JOIN task_campaigns c ON c.id=s.campaign_id WHERE c.game IN ('word','mines','pactbug') AND s.status='paid'")).rows[0].n;
+   assert.equal(Number(paid), 3, 'Word, Minesweeper and Pact Bug wins were paid by the AI agent');
+ } finally { await t.close(); }
+});

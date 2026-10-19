@@ -73,7 +73,7 @@ export function buildGamePrompt(campaign, submission) {
 
 The server generated the puzzle, checked that it was solved, and measured the time itself. You see the server's record of how the round was played. Your job:
 1. Decide whether this looks like a fair win by a person (not a script or bot). Use the time taken, the number of moves or entries, and the move timing when present. Humans are uneven: a median gap of a few hundred milliseconds between moves with visible spread is normal; near-identical gaps or impossibly fast solves are not.
-2. For a written quiz answer: approve only if it is correct, on topic and in the player's own words. Generic filler, copied documentation, wrong facts or an answer to a different question means escalate.
+2. For a written answer (Kadena Quiz or Spot the Pact Bug): approve only if it is correct, on topic and in the player's own words. Generic filler, copied documentation, wrong facts or an answer to a different question means escalate.
 3. For riddles: the server already matched the answers; escalate if a match looks accidental or gamed (for example a list of guesses).
 
 Rules:
