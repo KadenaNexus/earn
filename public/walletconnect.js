@@ -39,7 +39,7 @@ let clientPromise = null, client = null;
 function getClient() {
   clientPromise ||= import(LIB).then(mod => {
     const SignClient = mod.SignClient || mod.default?.SignClient || mod.default;
-    return SignClient.init({ projectId: PROJECT_ID, metadata: { name: 'Kadena Earn', description: 'Tasks and games that pay KDA from escrow.', url: location.origin, icons: [location.origin + '/nexus-mark.png'] } });
+    return SignClient.init({ projectId: PROJECT_ID, metadata: { name: 'Kadena Earn', description: 'Tasks and games that pay KDA from escrow.', url: location.origin, icons: [location.origin + '/earn-icon-square.png'] } });
   }).then(c => { client = c; return c; }).catch(e => { clientPromise = null; throw new Error('Could not load WalletConnect: ' + (e?.message || e)); });
   return clientPromise;
 }
