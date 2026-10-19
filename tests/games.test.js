@@ -239,6 +239,8 @@ test('New games: Word, Memory, Minesweeper and Pact Bug win through the server a
    const first = await n.move({ cell: 27, t: 500 }); assert.ok(first.data.opened.length >= 1, JSON.stringify(first.data));
    const { secret: ms } = await t.secret(n.s.id); assert.ok(!ms.mines.includes(27));
    for (let i = 0, k2 = 1; i < MINES.w * MINES.h; i++) if (!ms.mines.includes(i)) { const r = await n.move({ cell: i, t: 500 + 700 * k2++ }); if (r.data.solved) break; }
+   // Pin the server-recorded click times to a script's pace (50 ms apart), so a slow CI runner cannot make the run look human.
+   await t.db.query("UPDATE game_sessions SET state=jsonb_set(state,'{times}',(SELECT jsonb_agg(i*50) FROM jsonb_array_elements(state->'times') WITH ORDINALITY AS x(v,i))) WHERE id=$1", [n.s.id]);
    const nw = await n.finish(); assert.equal(nw.data.solved, true, JSON.stringify(nw.data));
    // Hitting a mine ends the try.
    const boom = await solve('mines');
