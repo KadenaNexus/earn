@@ -410,6 +410,7 @@ function showMiss(st, r) {
 
 // Follows a win from escrow reservation to payout.
 function showWin(round, summary) {
+  if (summary) coinBurst();
   openStage(`<div class="g-result"><h3>You won ${fmt(round?.reward)} KDA</h3>${summary ? `<p>${esc(summary)}</p>` : ''}
     <ul class="g-steps" id="gSteps"></ul><div class="links" id="gLinks"></div>
     <p class="note">The AI agent checks how the round was played. If anything looks unusual, a person reviews it instead, which can take longer.</p>
@@ -434,6 +435,36 @@ function showWin(round, summary) {
 
 // ---------- Start ----------
 setupAmbience($('#soundBtn'));
+
+// Decorative floating K coins and blocks behind the page; none for people who prefer reduced motion.
+const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+(function sky() {
+  if (calm()) return;
+  const layer = document.createElement('div'); layer.className = 'g-sky'; layer.setAttribute('aria-hidden', 'true');
+  const n = innerWidth < 600 ? 9 : 16, r = (a, b) => a + Math.random() * (b - a);
+  for (let k = 0; k < n; k++) {
+    const coin = k % 3 !== 2, el = document.createElement('span');
+    el.className = 'g-float ' + (coin ? 'coin' : 'block');
+    el.style.cssText = `--x:${r(0, 96)}%;--s:${Math.round(coin ? r(18, 38) : r(10, 22))}px;--o:${r(0.1, 0.22).toFixed(2)};--d:${r(18, 34).toFixed(1)}s;--delay:${-r(0, 34).toFixed(1)}s;--dx:${Math.round(r(-60, 60))}px;--f:${r(3, 7).toFixed(1)}s`;
+    el.innerHTML = coin ? '<i>K</i>' : '<i></i>';
+    layer.append(el);
+  }
+  document.body.prepend(layer);
+})();
+// A shower of K coins when a round is won.
+function coinBurst() {
+  if (calm() || !document.body.animate) return;
+  const cx = innerWidth / 2, cy = innerHeight / 3;
+  for (let k = 0; k < 26; k++) {
+    const el = document.createElement('span'); el.className = 'g-burst'; el.textContent = 'K'; el.setAttribute('aria-hidden', 'true');
+    el.style.left = cx + 'px'; el.style.top = cy + 'px'; document.body.append(el);
+    const a = Math.random() * Math.PI * 2, d = 120 + Math.random() * 220;
+    el.animate([{ transform: 'translate(-50%,-50%) scale(.4)', opacity: 1 },
+      { transform: `translate(calc(-50% + ${Math.cos(a) * d}px), calc(-50% + ${Math.sin(a) * d - 60}px)) scale(1) rotate(${Math.random() * 360}deg)`, opacity: 1, offset: 0.45 },
+      { transform: `translate(calc(-50% + ${Math.cos(a) * d * 1.2}px), calc(-50% + ${innerHeight}px)) rotate(${Math.random() * 720}deg)`, opacity: 0 }],
+      { duration: 1800 + Math.random() * 900, easing: 'cubic-bezier(.2,.7,.4,1)' }).onfinish = () => el.remove();
+  }
+}
 async function init() {
   try {
     state.config = await api('/config');
