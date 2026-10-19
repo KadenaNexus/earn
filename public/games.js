@@ -1,6 +1,7 @@
 // Kadena Nexus Games page. Paid rounds are generated and checked by the
 // server; practice rounds run here with the same puzzle code.
 import { chooseWallet, restoreWallet, forgetWallet } from './wallets.js';
+import { setupAmbience } from './ambience.js';
 import { tilesGenerate, tilesSolved, tileNeighbors, logicGenerate, logicCheck, memoryGenerate, memoryFlip, MINES, minesPlace, minesReveal } from './games-core.js';
 
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
@@ -98,10 +99,10 @@ function renderLobby() {
       <div class="meta"><span>${r.left} of ${r.max} prizes left</span><span>Ends in ${endsIn(r.deadline)}</span><span>${r.minutes} min per try</span></div>
       <div class="foot">${playButton(r)}</div></article>`).join('')
     : `<div class="empty-card">No paid rounds are open right now. Warm up below; new rounds are announced on <a href="https://t.me/KadenaNexus">Telegram</a> and <a href="https://x.com/KadenaNexus">@KadenaNexus</a>.</div>`;
-  $('#practice').innerHTML = d.games.map(g => `<article class="game-card">
+  $('#practice').innerHTML = d.games.filter(g => PRACTICE.includes(g.id)).map(g => `<article class="game-card">
       <div class="gc-top"><span class="gc-icon">${ICON[g.id]}</span><h3>${esc(g.name)}</h3></div>
       <p>${esc(g.blurb)}</p>
-      <div class="foot">${PRACTICE.includes(g.id) ? `<button class="btn ghost" data-practice="${g.id}">Practice</button>` : '<span class="state">Paid rounds only: answers stay secret.</span>'}</div></article>`).join('');
+      <div class="foot"><button class="btn ghost" data-practice="${g.id}">Try for free</button></div></article>`).join('');
   $$('[data-connect]').forEach(b => b.onclick = () => action(b, connect));
   $$('[data-email]').forEach(b => b.onclick = () => { $('#emailCard').scrollIntoView({ behavior: 'smooth', block: 'center' }); $('#gEmail')?.focus(); });
   $$('[data-play]').forEach(b => b.onclick = () => action(b, () => playPaid(Number(b.dataset.play))));
@@ -437,6 +438,7 @@ function showWin(round, summary) {
 }
 
 // ---------- Start ----------
+setupAmbience($('#soundBtn'));
 async function init() {
   try {
     state.config = await api('/config');
