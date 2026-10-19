@@ -108,3 +108,10 @@
 .gq,.gq .qn,.gq fieldset{min-width:0;max-width:100%}
 .pact{max-width:100%;font-size:12px}
 .pact{white-space:pre-wrap;overflow-wrap:anywhere}
+/* Background sound switch */
+.sound-btn{border:1px solid var(--line);background:var(--surface);border-radius:999px;width:34px;height:34px;display:grid;place-items:center;color:var(--teal-text);flex:none}
+.sound-btn .mute{display:none}
+.sound-btn.off{color:var(--muted)}
+.sound-btn.off .on{display:none}
+.sound-btn.off .mute{display:block}
+@media (max-width:430px){.games-page .brand span{display:none}.games-page .top .wrap{gap:6px}}

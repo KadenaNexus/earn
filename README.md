@@ -51,7 +51,7 @@ Submissions are untrusted text. The model is told to treat them as data and to p
 3. The AI agent reviews how the round was played (approve or hand to the owner; it never asks for changes on a game and never rejects). Wins with bot-like signals (faster than a person, machine-like move timing, a grid pasted rather than typed) go to the owner without asking the model.
 4. Limits in code: one win per wallet per round, `GAMES_WINS_PER_WALLET_PER_DAY` wins per game per 24 h, and the agent's own games budget (`GAMES_MAX_REWARD_KDA` per win, `GAMES_DAILY_KDA` per 24 h), separate from the task limits. Over-limit wins wait in the owner's review queue.
 
-The generic task endpoints refuse game rounds, so game proof can only come from a finished, server-checked round. Tiles, Logic Grid, Memory Match and Minesweeper have free practice that runs in the browser. The email requirement needs `RESEND_API_KEY` and `EMAIL_FROM`.
+The generic task endpoints refuse game rounds, so game proof can only come from a finished, server-checked round. The email requirement needs `RESEND_API_KEY` and `EMAIL_FROM`.
 
 ### Submission status
 
