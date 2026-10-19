@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from '../src/server.js';
 import { Worker } from '../src/jobs.js';
-import { ReviewAgent } from '../src/agent.js';
+import { ReviewAgent, buildGamePrompt as gamePrompt } from '../src/agent.js';
 import { sign } from '../src/pact.js';
 import { newRound, checkRound, GAMES } from '../src/games.js';
 import { RIDDLES } from '../src/game-content.js';
@@ -356,3 +356,46 @@ test('Launch limits: the AI pays game wins up to 20 KDA, and a wallet can win 3 
    assert.equal(fourth.solved, false); assert.match(fourth.message, /3 games today/);
  } finally { await t.close(); }
 });
+
+test('AI rejects a Quiz or Pact Bug answer that misses the key idea; never rejects anything else', async () => {
+ const t = await setup('ke_games_reject', false);
+ try {
+   const play = async (game, finishPlay) => {
+     const cid = await t.round(game); const u = await client(t.base, testKey());
+     const s = (await u.call('/games/' + cid + '/play', {})).data;
+     await t.db.query("UPDATE game_sessions SET started_at=now()-interval '3 minutes' WHERE id=$1", [s.id]);
+     const { secret } = await t.secret(s.id);
+     const w = (await u.call('/games/sessions/' + s.id + '/finish', { play: finishPlay(secret) })).data;
+     assert.equal(w.solved, true, JSON.stringify(w)); return { u, cid, sid: w.submission_id };
+   };
+   const status = async sid => (await t.db.query('SELECT s.status,s.review_note,r.applied,r.skip_reason FROM submissions s LEFT JOIN ai_reviews r ON r.submission_id=s.id WHERE s.id=$1', [sid])).rows[0];
+   assert.match(buildGamePromptText(), /what_a_good_answer_says/);
+   // A quiz answer with true but off-point statements is rejected, with a note naming the key idea.
+   t.setNext(() => ({ decision: 'reject', confidence: 0.9, reasons: 'The answer talks about signatures in general and never says the capability scopes the signature to one transfer.', note_to_contributor: 'Close, but the key point is that the signature only allows that one transfer, so it cannot be reused.' }));
+   const q = await play('quiz', sec => ({ choices: sec.answers, written: 'A signature proves the sender authorized the transaction.' }));
+   await t.ticks(5);
+   const qs = await status(q.sid);
+   assert.equal(qs.status, 'rejected'); assert.equal(qs.applied, 'rejected'); assert.match(qs.review_note, /^AI reviewer: Close/);
+   const job = (await t.db.query("SELECT kind,status FROM chain_jobs WHERE submission_id=$1 AND kind='release'", [q.sid])).rows[0];
+   assert.ok(job, 'the reserved prize is released back to the round');
+   const mine = (await q.u.call('/me/games')).data.rounds.find(r => String(r.submission_id) === String(q.sid));
+   assert.equal(mine.status, 'rejected'); assert.match(mine.review_note, /one transfer/);
+   assert.equal((await q.u.call('/me/games')).data.wins_today_total, 0, 'a rejected answer does not use up a daily win');
+   // A reject on a game without a written answer, or with low confidence, goes to the owner instead.
+   t.setNext(() => ({ decision: 'reject', confidence: 0.95, reasons: 'Too fast.', note_to_contributor: 'This looked automated to me.' }));
+   const l = await play('logic', sec => ({ grid: sec.solution, entries: 30 }));
+   await t.ticks(5);
+   const ls = await status(l.sid); assert.equal(ls.status, 'in_review'); assert.equal(ls.skip_reason, 'reject_not_allowed');
+   t.setNext(() => ({ decision: 'reject', confidence: 0.6, reasons: 'Not sure the idea is there.', note_to_contributor: 'The key point is that the guard must be enforced.' }));
+   const b = await play('pactbug', sec => ({ choice: sec.answer, written: 'Something about the guard being wrong in this code.' }));
+   await t.ticks(5);
+   const bs = await status(b.sid); assert.equal(bs.status, 'in_review'); assert.equal(bs.skip_reason, 'unclear_reject');
+   // A correct answer is still approved and paid.
+   t.setNext(() => ({ decision: 'approve', confidence: 0.95, reasons: 'Names the scoped signature.', note_to_contributor: 'Well played.' }));
+   const ok = await play('quiz', sec => ({ choices: sec.answers, written: 'The signature only allows that exact transfer, so it cannot be reused for anything else.' }));
+   await t.ticks(5);
+   assert.equal((await status(ok.sid)).status, 'paid');
+ } finally { await t.close(); }
+});
+
+function buildGamePromptText() { return gamePrompt({ title: 'Quiz round', reward_kda: '5' }, { proof_json: { result: 'ok', play: '{}' } }).system; }
