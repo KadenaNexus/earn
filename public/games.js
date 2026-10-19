@@ -1,6 +1,6 @@
 // Kadena Nexus Games page. Paid rounds are generated and checked by the
 // server; practice rounds run here with the same puzzle code.
-import { EckoWallet } from './wallet.js';
+import { chooseWallet, restoreWallet, forgetWallet } from './wallets.js';
 import { tilesGenerate, tilesSolved, tileNeighbors, logicGenerate, logicCheck } from './games-core.js';
 
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
@@ -37,13 +37,13 @@ async function action(button, fn) {
 // ---------- Wallet ----------
 function sessionUI() {
   $('#networkLabel').textContent = (state.config.network === 'mainnet01' ? 'Kadena mainnet' : state.config.network === 'development' ? 'Local development chain' : 'Kadena ' + state.config.network) + ' · Chain ' + state.config.chain;
-  $('#walletBtn').textContent = state.user ? short(state.user.account) : 'Connect Ecko';
+  $('#walletBtn').textContent = state.user ? short(state.user.account) : 'Connect wallet';
   $('#walletAcct').textContent = state.user?.account || '';
   if (!state.user) walletMenu(false);
 }
 function walletMenu(open) { $('#walletMenu').hidden = !open; $('#walletBtn').setAttribute('aria-expanded', String(open)); }
 async function connect() {
-  wallet = new EckoWallet(); const account = await wallet.connect(state.config.network);
+  wallet = await chooseWallet(); const account = await wallet.connect(state.config.network);
   const challenge = await api('/auth/nonce', { account });
   const signed_command = await wallet.sign(challenge.command);
   const session = await api('/auth/verify', { account, nonce: challenge.nonce, signed_command });
@@ -52,7 +52,7 @@ async function connect() {
 }
 $('#walletBtn').onclick = () => state.user ? walletMenu($('#walletMenu').hidden) : action($('#walletBtn'), connect);
 $('#walletCopy').onclick = async () => { walletMenu(false); try { await navigator.clipboard.writeText(state.user.account); notify('Address copied.'); } catch { notify(state.user.account); } };
-$('#walletOut').onclick = () => action($('#walletOut'), async () => { walletMenu(false); await api('/auth/logout', {}); state.user = null; state.csrf = null; state.me = null; sessionUI(); await load(); });
+$('#walletOut').onclick = () => action($('#walletOut'), async () => { walletMenu(false); await api('/auth/logout', {}); if (wallet?.kind === 'phone') wallet.disconnect().catch(() => {}); wallet = null; forgetWallet(); state.user = null; state.csrf = null; state.me = null; sessionUI(); await load(); });
 document.addEventListener('click', e => { if (!e.target.closest('.wallet-wrap')) walletMenu(false); });
 
 // ---------- Lobby ----------
@@ -65,7 +65,7 @@ const myRound = id => state.me?.rounds.find(r => Number(r.campaign_id) === Numbe
 function playButton(r) {
   const rules = state.data.rules, mine = myRound(r.id);
   if (!rules.writes) return '<button class="btn" disabled>Opens soon</button>';
-  if (!state.user) return `<button class="btn" data-connect>Connect Ecko to play</button>`;
+  if (!state.user) return `<button class="btn" data-connect>Connect wallet to play</button>`;
   if (!state.me.email_verified) return `<button class="btn" data-email>Confirm email to play</button>`;
   if (mine?.submission_id && mine.status !== 'reservation_failed') {
     if (mine.status === 'paid') return `<span class="badge ok">Won · paid</span>${mine.tx ? `<span class="state">${txLink(mine.tx)}</span>` : ''}`;
@@ -136,8 +136,8 @@ async function openRound() {
   const body = { title: `${g.name} round – ${day}`, summary: `${g.blurb} Win KDA paid from escrow by the AI agent.`, sponsor_name: 'Kadena Nexus Games', category: 'Games', template: 'Game',
     reward_kda: String($('#oReward').value), max_rewards: Number($('#oCount').value), minutes_estimate: g.minutes,
     deadline: new Date(Date.now() + Number($('#oHours').value) * 3600000).toISOString(), steps: ['Play'], proof_schema: [{ key: 'result', label: 'Game result', type: 'text' }], game, featured: false, ai_review: true };
-  wallet ||= new EckoWallet(); const connected = await wallet.connect(state.config.network);
-  if (connected !== state.user.account) throw new Error('Select the signed-in owner account in Ecko.');
+  wallet ||= restoreWallet(); const connected = await wallet.connect(state.config.network);
+  if (connected !== state.user.account) throw new Error('Select the signed-in owner account in your wallet.');
   const created = await api('/admin/campaigns', body, { money: true });
   const prepared = await api(`/admin/campaigns/${created.campaign.id}/funding-command`, {});
   const signed_command = await wallet.sign(prepared.command);

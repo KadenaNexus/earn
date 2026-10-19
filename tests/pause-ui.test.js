@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 
 const source = (await readFile(new URL('../public/app.js', import.meta.url), 'utf8'))
-  .replace(/^import \{ EckoWallet \} from '\.\/wallet\.js';\n/, '')
+  .replace(/^import \{ chooseWallet, restoreWallet, forgetWallet \} from '\.\/wallets\.js';\n/, '')
   .replace(/\ninit\(\);\s*$/, '\n');
 const account = 'k:' + 'a'.repeat(64);
 const pending = { id: 'pause-job', request_key: 'b'.repeat(43) };
@@ -69,7 +69,7 @@ function fixture() {
   };
   const context = vm.createContext({
     document, window: { scrollTo() {} }, URL, Date, FormData,
-    EckoWallet: class { constructor() { return wallet; } },
+    restoreWallet: () => wallet, chooseWallet: async () => wallet, forgetWallet: () => {},
     localStorage: { getItem() { return null; }, setItem() {} },
     matchMedia() { return { matches: false }; },
     crypto: { randomUUID() { return 'test-idempotency-key'; } },

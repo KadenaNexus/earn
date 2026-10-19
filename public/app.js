@@ -1,4 +1,4 @@
-import { EckoWallet } from './wallet.js';
+import { chooseWallet, restoreWallet, forgetWallet } from './wallets.js';
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt=n=>Number(n||0).toLocaleString('en-US',{maximumFractionDigits:6});
@@ -24,16 +24,16 @@ function owner(){return state.user?.role==='admin';}
 function sessionUI(){
  $('#networkLabel').textContent=(state.config.network==='development'?'Local development chain':state.config.network==='mainnet01'?'Kadena mainnet':'Kadena '+state.config.network)+' · Chain '+state.config.chain;
  $$('[data-go="admin"],[data-go="create"]').forEach(b=>b.hidden=!owner());
- $('#walletBtn').textContent=state.user?short(state.user.account):'Connect Ecko';
+ $('#walletBtn').textContent=state.user?short(state.user.account):'Connect wallet';
  $('#walletAcct').textContent=state.user?.account||'';
  if(!state.user)walletMenu(false);
  fitHeader();
- $('#walletBtn').title=state.user?.account||'Connect your desktop Ecko wallet';
+ $('#walletBtn').title=state.user?.account||'Connect Linx (phone) or the Ecko extension';
  $('#cRev').value=state.config.admin_account;
  if(!owner()&&['admin','create'].includes(state.view))go('explore');
 }
 async function connect(){
- wallet=new EckoWallet();const account=await wallet.connect(state.config.network);
+ wallet=await chooseWallet();const account=await wallet.connect(state.config.network);
  const challenge=await api('/auth/nonce',{account});
  const signed_command=await wallet.sign(challenge.command);
  const session=await api('/auth/verify',{account,nonce:challenge.nonce,signed_command});
@@ -45,7 +45,7 @@ function fitHeader(){const top=$('header.top'),w=$('header.top .wrap'),n=$('head
 window.addEventListener?.('resize',fitHeader);
 document.fonts?.ready.then(fitHeader);
 $('#walletBtn').onclick=e=>{if(state.user){e.stopPropagation();walletMenu($('#walletMenu').hidden);}else action($('#walletBtn'),connect);};
-$('#walletOut').onclick=()=>action($('#walletOut'),async()=>{walletMenu(false);await api('/auth/logout',{});state.user=null;state.csrf=null;state.mine=[];sessionUI();closeDrawer();await refresh();});
+$('#walletOut').onclick=()=>action($('#walletOut'),async()=>{walletMenu(false);await api('/auth/logout',{});if(wallet?.kind==='phone')wallet.disconnect().catch(()=>{});wallet=null;forgetWallet();state.user=null;state.csrf=null;state.mine=[];sessionUI();closeDrawer();await refresh();});
 $('#walletCopy').onclick=async()=>{try{await navigator.clipboard.writeText(state.user?.account||'');notify('Address copied.');}catch{notify(state.user?.account||'');}walletMenu(false);};
 document.addEventListener('click',e=>{if(!e.target?.closest?.('.wallet-wrap'))walletMenu(false);});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')walletMenu(false);});
@@ -72,7 +72,7 @@ async function loadPersonal(){if(!state.user){state.mine=[];for(const id of ['he
  for(const [id,key]of [['heroEarned','paid'],['heroPending','review'],['tPaid','paid'],['tApproved','approved'],['tReview','review']])$('#'+id).textContent=fmt(rewards[key]);renderMine();
 }
 function renderMine(){
- if(!state.user){$('#rows').innerHTML='<li class="empty">Connect your Ecko wallet to view your tasks.</li>';return;}
+ if(!state.user){$('#rows').innerHTML='<li class="empty">Connect your wallet to view your tasks.</li>';return;}
  const filters={review:['reserving','in_review','changes_requested'],approved:['approved','payout_failed'],paid:['paid']};
  const mine=state.mine.filter(m=>state.mineFilter==='all'||filters[state.mineFilter]?.includes(m.s));
  $('#rows').innerHTML=mine.length?mine.map(m=>`<li><div><button class="ghostbtn" data-mine="${esc(m.campaign_id)}">${esc(m.t)}</button><div class="s">${date(m.when)} ${m.tx?' · '+txLink(m.tx):''}</div>${m.review_note?`<div class="status-note">${/^AI reviewer:/.test(m.review_note)?'':'Reviewer: '}${esc(m.review_note)}</div>`:''}${m.error?`<div class="status-note">${esc(m.error)}</div>`:''}</div>${badge(m.s)}<b class="kda">${fmt(m.r)}</b></li>`).join(''):'<li class="empty">No tasks in this view yet.</li>';
@@ -91,7 +91,7 @@ function renderDrawer(){
  let body=`<span class="cat">${esc(t.cat)} · ${esc(t.type)}</span><h2 id="dTitle">${esc(t.title)}</h2><div class="rewardrow"><b class="kda xl">${fmt(t.reward)}</b><div class="time">${t.mins} min<br>Deadline: ${date(t.deadline)}</div></div><div class="stepper">${[0,1,2,3].map(i=>`<span class="${i<=stage?'done':''}"></span>`).join('')}</div><div class="stepnames">${['Start','Submit proof','In review','Paid'].map((s,i)=>i===stage?`<b>${s}</b>`:`<span>${s}</span>`).join('')}</div>`;
  let foot='';
  if(stage===0){const s=t.escrow;body+=`<div class="sec"><h3>What to do</h3><ol class="steps">${t.steps.map(s=>`<li>${esc(s)}</li>`).join('')}</ol></div>${t.ai?'<div class="sec"><p class="ai-line"><span class="badge ai">Reviewed &amp; paid by AI agent</span> An AI agent reviews this task and pays approved proof from escrow, usually within minutes. If it is unsure, a human reviewer decides.</p></div>':''}<div class="sec"><h3>Proof you’ll submit</h3><ul class="proof">${t.proof_schema.map(f=>`<li>${esc(f.label)}${f.private?' · reviewer only':''}</li>`).join('')}</ul></div><div class="sec"><h3>Campaign escrow</h3>${s?`<div class="ledger"><div><span>Funded</span><b class="kda">${fmt(s.funded)}</b></div><div><span>Paid</span><b class="kda">${fmt(s.paid)}</b></div><div><span>Remaining</span><b class="kda">${fmt(s.remaining)}</b></div></div><p class="note">Last checked: ${date(s.checked_at)}. Your slot is held for up to 30 minutes, until the deadline.</p>`:'<p>Escrow status is being checked.</p>'}</div>`;
-   foot=`<button class="btn" id="startTask" ${t.status!=='open'||t.left<=0||!state.config.writes_enabled?'disabled':''}>${state.user?'Start task':'Connect Ecko to start'}</button>`;
+   foot=`<button class="btn" id="startTask" ${t.status!=='open'||t.left<=0||!state.config.writes_enabled?'disabled':''}>${state.user?'Start task':'Connect wallet to start'}</button>`;
  }else if(submit){
    body+=`<div class="sec">${m.review_note?`<p class="status-note">${/^AI reviewer:/.test(m.review_note)?'':'Reviewer: '}${esc(m.review_note)}</p>`:''}<h3>Submit your proof</h3><p class="note">${m.s==='changes_requested'?'Your reward remains reserved while you make these changes.':'Slot held until '+date(m.expires_at)+'.'}</p><form id="proofForm" class="form">${t.proof_schema.map(f=>`<div class="field"><label for="proof-${esc(f.key)}">${esc(f.label)}${f.private?' · Private':''}</label>${f.type==='url'?`<input type="url" id="proof-${esc(f.key)}" name="${esc(f.key)}" placeholder="https://" value="${esc(m.proof_json?.[f.key]||'')}" ${f.required?'required':''}>`:`<textarea id="proof-${esc(f.key)}" name="${esc(f.key)}" minlength="${f.min_len}" maxlength="12000" ${f.required?'required':''}>${esc(m.proof_json?.[f.key]||'')}</textarea>`}<small>${f.type==='url'?'Paste a link; file uploads come later.':`At least ${f.min_len} characters.`}</small></div>`).join('')}<label><input type="checkbox" id="publicConsent" ${m.public_consent?'checked':''}> Publish my non-private proof on Completed work if I’m paid.</label></form></div>`;
    foot='<button class="btn" id="submitProof">Submit proof</button>';
@@ -139,8 +139,8 @@ function calc(){
 $$('#cTitle,#cDesc,#cSponsor,#cReward,#cCount,#cMins,#cDeadline').forEach(i=>i.oninput=calc);
 const defaultDeadline=new Date();defaultDeadline.setDate(defaultDeadline.getDate()+7);defaultDeadline.setHours(23,59,0,0);
 $('#cDeadline').value=new Date(defaultDeadline.getTime()-defaultDeadline.getTimezoneOffset()*60000).toISOString().slice(0,16);drawBuilders();
-async function fundCampaign(id){wallet||=new EckoWallet();const connected=await wallet.connect(state.config.network);if(connected!==state.user.account)throw new Error('Select the signed-in owner account in Ecko.');const prepared=await api('/admin/campaigns/'+id+'/funding-command',{});const signed_command=await wallet.sign(prepared.command);await api('/admin/campaigns/'+id+'/confirm-funding',{signed_command},{money:true});notify('Funding transaction saved. The campaign opens after on-chain confirmation.');await refresh();}
-$('#fundBtn').onclick=()=>action($('#fundBtn'),async()=>{state.creating=true;try{const result=await api('/admin/campaigns',formCampaign(),{money:true});$('#fundState').textContent='Draft saved. Confirm the funding transaction in Ecko.';await fundCampaign(result.campaign.id);$('#fundState').textContent='Funding submitted. Track confirmation in Admin → Campaigns.';}finally{state.creating=false;}});
+async function fundCampaign(id){wallet||=restoreWallet();const connected=await wallet.connect(state.config.network);if(connected!==state.user.account)throw new Error('Select the signed-in owner account in your wallet.');const prepared=await api('/admin/campaigns/'+id+'/funding-command',{});const signed_command=await wallet.sign(prepared.command);await api('/admin/campaigns/'+id+'/confirm-funding',{signed_command},{money:true});notify('Funding transaction saved. The campaign opens after on-chain confirmation.');await refresh();}
+$('#fundBtn').onclick=()=>action($('#fundBtn'),async()=>{state.creating=true;try{const result=await api('/admin/campaigns',formCampaign(),{money:true});$('#fundState').textContent='Draft saved. Confirm the funding transaction in your wallet.';await fundCampaign(result.campaign.id);$('#fundState').textContent='Funding submitted. Track confirmation in Admin → Campaigns.';}finally{state.creating=false;}});
 
 $('#admTabs').onclick=e=>{const b=e.target.closest('[data-a]');if(b){state.tab=b.dataset.a;$$('#admTabs button').forEach(x=>x.setAttribute('aria-selected',x===b));action(null,renderAdmin);}};
 function renderPauseControl(){
@@ -232,7 +232,7 @@ async function renderAdmin(){
    $$('[data-undo]').forEach(b=>b.onclick=()=>action(b,async()=>{await api('/submissions/'+b.dataset.undo+'/undo-approval',{note:'Approval undone before payment. Please update your proof and submit again.'});notify('Approval undone. Nothing was sent; the contributor can resubmit and it goes through review again.');await renderAdmin();}));
  }else if(state.tab==='camp'){
    const [campaigns,jobs]=await Promise.all([api('/admin/campaigns'),api('/admin/jobs')]);if(!current())return;
-   $('#admBody').innerHTML=`<div class="scroll-x"><table class="tbl camp-tbl"><thead><tr><th>Campaign</th><th>Funded</th><th>Paid</th><th>Remaining</th><th>Refunded</th><th>Status</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>${campaigns.map(t=>`<tr><td><b>${esc(t.title)}</b><div class="time">${date(t.deadline)} · ${t.max} slots${t.funding_tx?` · ${txLink(t.funding_tx)}`:''}</div></td><td><b class="kda">${fmt(t.escrow?.funded)}</b></td><td><b class="kda">${fmt(t.escrow?.paid)}</b></td><td><b class="kda">${fmt(t.escrow?.remaining)}</b></td><td><b class="kda">${fmt(t.escrow?.refunded)}</b></td><td><div class="badges">${badge(t.status)}${t.hidden?'<span class="badge warn">Hidden</span>':''}</div></td><td><div class="act row-act">${['draft','funding_failed'].includes(t.status)?`<button class="sm ok" data-fund="${t.id}" ${k.paused?'disabled':''}>Fund with Ecko</button>`:''}${t.editable?`<button class="sm" data-edit="${t.id}">Edit</button><button class="sm" data-hide="${t.id}" title="${t.hidden?'Show this task on the board again':'Take this task off the board; unused KDA still returns at the deadline'}">${t.hidden?'Show':'Hide'}</button>`:''}</div></td></tr>`).join('')||'<tr><td colspan="7" class="empty">Create your first campaign.</td></tr>'}</tbody></table></div><div id="campEdit"></div><p class="note">After the deadline, unclaimed rewards are refunded automatically. Submitted work stays funded until paid or rejected.</p>${jobs.filter(j=>j.error||['prepared','broadcast'].includes(j.status)).map(j=>`<p class="status-note">${esc(j.kind)} · ${esc(j.status)} · ${txLink(j.request_key)} ${esc(j.error||'Awaiting confirmation')}</p>`).join('')}`;
+   $('#admBody').innerHTML=`<div class="scroll-x"><table class="tbl camp-tbl"><thead><tr><th>Campaign</th><th>Funded</th><th>Paid</th><th>Remaining</th><th>Refunded</th><th>Status</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>${campaigns.map(t=>`<tr><td><b>${esc(t.title)}</b><div class="time">${date(t.deadline)} · ${t.max} slots${t.funding_tx?` · ${txLink(t.funding_tx)}`:''}</div></td><td><b class="kda">${fmt(t.escrow?.funded)}</b></td><td><b class="kda">${fmt(t.escrow?.paid)}</b></td><td><b class="kda">${fmt(t.escrow?.remaining)}</b></td><td><b class="kda">${fmt(t.escrow?.refunded)}</b></td><td><div class="badges">${badge(t.status)}${t.hidden?'<span class="badge warn">Hidden</span>':''}</div></td><td><div class="act row-act">${['draft','funding_failed'].includes(t.status)?`<button class="sm ok" data-fund="${t.id}" ${k.paused?'disabled':''}>Fund</button>`:''}${t.editable?`<button class="sm" data-edit="${t.id}">Edit</button><button class="sm" data-hide="${t.id}" title="${t.hidden?'Show this task on the board again':'Take this task off the board; unused KDA still returns at the deadline'}">${t.hidden?'Show':'Hide'}</button>`:''}</div></td></tr>`).join('')||'<tr><td colspan="7" class="empty">Create your first campaign.</td></tr>'}</tbody></table></div><div id="campEdit"></div><p class="note">After the deadline, unclaimed rewards are refunded automatically. Submitted work stays funded until paid or rejected.</p>${jobs.filter(j=>j.error||['prepared','broadcast'].includes(j.status)).map(j=>`<p class="status-note">${esc(j.kind)} · ${esc(j.status)} · ${txLink(j.request_key)} ${esc(j.error||'Awaiting confirmation')}</p>`).join('')}`;
    $$('[data-fund]').forEach(b=>b.onclick=()=>action(b,()=>fundCampaign(b.dataset.fund)));
    state.editing=false;
    $$('[data-edit]').forEach(b=>b.onclick=()=>editCampaign(campaigns.find(t=>String(t.id)===b.dataset.edit)));
@@ -252,7 +252,7 @@ $('#pauseBtn').onclick=async()=>{
  try{
    // Check the server before opening Ecko; it rejects another pending change.
    const prepared=await api('/admin/pause-command',{paused});
-   wallet||=new EckoWallet();const connected=await wallet.connect(state.config.network);if(connected!==state.user.account)throw new Error('Select the owner account in Ecko.');
+   wallet||=restoreWallet();const connected=await wallet.connect(state.config.network);if(connected!==state.user.account)throw new Error('Select the owner account in your wallet.');
    const signed_command=await wallet.sign(prepared.command);
    // The POST may commit even if its response is lost. Latch its exact signed
    // request before sending, and never clear it from an unrelated/null KPI.

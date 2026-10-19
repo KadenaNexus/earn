@@ -17,7 +17,7 @@ import { requireValue } from './validation.js';
 export function createApp(db,chain,c,worker=new Worker(db,chain,c)) {
  if(worker.agent===undefined)worker.agent=c.ai?.apiKey?new ReviewAgent(db,chain,c):null;
  const app=express();app.disable('x-powered-by');if(c.production)app.set('trust proxy',1);
- app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'"],styleSrc:["'self'","'unsafe-inline'","https://fonts.googleapis.com"],fontSrc:["'self'","https://fonts.gstatic.com"],imgSrc:["'self'","data:"],connectSrc:["'self'"],objectSrc:["'none'"],frameAncestors:["'none'"],upgradeInsecureRequests:c.production?[]:null}},strictTransportSecurity:c.production?undefined:false}));
+ app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'"],styleSrc:["'self'","'unsafe-inline'","https://fonts.googleapis.com"],fontSrc:["'self'","https://fonts.gstatic.com"],imgSrc:["'self'","data:"],connectSrc:["'self'",'wss://relay.walletconnect.org','wss://relay.walletconnect.com','https://*.walletconnect.org','https://*.walletconnect.com'],frameSrc:['https://verify.walletconnect.org','https://verify.walletconnect.com'],objectSrc:["'none'"],frameAncestors:["'none'"],upgradeInsecureRequests:c.production?[]:null}},strictTransportSecurity:c.production?undefined:false}));
  app.use(express.json({limit:'128kb'}));app.use(cookieParser());
  app.use('/api',(req,res,next)=>{res.set('Cache-Control','no-store');next();});
  app.use('/api',rateLimit({windowMs:60000,limit:300,standardHeaders:'draft-8',legacyHeaders:false}));

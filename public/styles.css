@@ -458,3 +458,20 @@ nav.primary a.navlink .new{margin-left:6px;font-size:10px;font-weight:700;letter
   nav.bottom a{display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0 10px;font-size:11px;color:var(--muted);text-decoration:none}
   nav.bottom a[aria-current="page"]{color:var(--teal-text)}
 }
+
+/* Wallet choice and phone-wallet (WalletConnect) window */
+.wc-modal{position:fixed;inset:0;z-index:120;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px}
+.wc-modal[hidden]{display:none}
+.wc-panel{background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:18px;padding:22px;width:min(420px,100%);display:grid;gap:14px;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+.wc-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.wc-head h2{font-size:20px}
+.wc-x{border:0;background:none;color:var(--muted);font-size:18px;padding:6px}
+.wc-step{margin:0;color:var(--muted)}
+.wc-open{text-decoration:none;background:var(--orange);color:var(--orange-ink)}
+.wc-qr{justify-self:center;background:#fff;padding:12px;border-radius:12px}
+.wc-qr img{display:block}
+.wc-note{margin:0;font-size:13px;color:var(--muted)}
+.wallet-choice{display:grid;gap:2px;text-align:left;border:1px solid var(--line);background:var(--bg);border-radius:14px;padding:14px 16px}
+.wallet-choice b{font-size:16px}
+.wallet-choice span{font-size:13px;color:var(--muted)}
+.wallet-choice:hover,.wallet-choice:focus-visible{border-color:var(--teal)}
