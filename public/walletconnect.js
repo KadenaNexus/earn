@@ -62,11 +62,10 @@ function ui() {
   modal.innerHTML = `<div class="wc-panel">
     <div class="wc-head"><h2 id="wcTitle">Connect your phone wallet</h2><button type="button" class="wc-x" aria-label="Close">✕</button></div>
     <p class="wc-step"></p>
-    <a class="btn wc-open" hidden>Open Linx</a>
     <div class="wc-qr" hidden><img alt="WalletConnect QR code" width="220" height="220"></div>
     <div class="wc-row" hidden><button type="button" class="btn ghost wc-copy">Copy link</button></div>
     <button type="button" class="btn ghost wc-reset" hidden>Start a new connection</button>
-    <p class="wc-note">Use Linx or the Ecko app. On a phone, tap Open Linx; on a computer, scan the code in the wallet. Your key never leaves your wallet.</p>
+    <p class="wc-note">Easiest on a phone: open this page inside the Linx app (Explore), where it connects directly. Your key never leaves your wallet.</p>
   </div>`;
   document.body.append(modal);
   modal.querySelector('.wc-x').onclick = () => { cancelCurrent?.(); hide(); };
@@ -79,10 +78,9 @@ function show(step, uri, title) {
   m.querySelector('#wcTitle').textContent = title || 'Connect your phone wallet';
   m.querySelector('.wc-step').textContent = step;
   m.querySelector('.wc-reset').hidden = true;
-  const open = m.querySelector('.wc-open'), qr = m.querySelector('.wc-qr'), row = m.querySelector('.wc-row');
-  open.hidden = !uri || !phone(); row.hidden = !uri; qr.hidden = true;
+  const qr = m.querySelector('.wc-qr'), row = m.querySelector('.wc-row');
+  row.hidden = !uri; qr.hidden = true;
   if (!uri) return;
-  open.href = uri;
   m.querySelector('.wc-copy').onclick = () => navigator.clipboard?.writeText(uri).then(() => { m.querySelector('.wc-copy').textContent = 'Copied ✓'; });
   if (!phone()) import(QR).then(q => (q.default || q).toDataURL(uri, { width: 220, margin: 1 })).then(src => { qr.querySelector('img').src = src; qr.hidden = false; }).catch(() => {});
 }
@@ -96,7 +94,7 @@ async function connectSession(chain) {
   if (existing) { hide(); return existing; }
   show('Preparing a secure connection…');
   const r = await c.connect({ requiredNamespaces: { kadena: { methods: METHODS, chains: [chain], events: [] } } });
-  show(phone() ? 'Tap Open Linx, approve the connection, then come back to this page.' : 'Scan with Linx or the Ecko app, then approve the connection on your phone.', r.uri);
+  show(phone() ? 'Tap Copy link, open Linx, choose WalletConnect and paste the link. Approve, then come back to this page.' : 'Scan with Linx or the Ecko app, then approve the connection on your phone.', r.uri);
   const cancelled = new Promise((_, reject) => { cancelCurrent = () => reject(new Error('Connection cancelled.')); });
   try { return await Promise.race([r.approval(), cancelled]); }
   finally { cancelCurrent = null; hide(); }
