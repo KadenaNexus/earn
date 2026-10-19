@@ -125,3 +125,63 @@ export function answerMatches(given, accepted) {
     return words.join(' ') === n || (` ${words.join(' ')} `).includes(` ${n} `);
   });
 }
+
+// ---------- Kadena Word (5 letters, 6 guesses) ----------
+// 'hit' = right letter, right place; 'near' = in the word elsewhere; 'miss' = not (more times) in the word.
+export const WORD_TRIES = 6;
+export function wordScore(guess, answer) {
+  const res = Array(5).fill('miss'), left = {};
+  for (let i = 0; i < 5; i++) { if (guess[i] === answer[i]) res[i] = 'hit'; else left[answer[i]] = (left[answer[i]] || 0) + 1; }
+  for (let i = 0; i < 5; i++) if (res[i] !== 'hit' && left[guess[i]] > 0) { res[i] = 'near'; left[guess[i]]--; }
+  return res;
+}
+
+// ---------- Memory Match (4×4, 8 pairs) ----------
+export const MEMORY_SYMBOLS = ['◆', '●', '▲', '■', '★', '✚', '♥', '☾', '⬢', '✦', '☀', '♣'];
+export function memoryGenerate(rand) {
+  const symbols = [...MEMORY_SYMBOLS];
+  for (let i = symbols.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [symbols[i], symbols[j]] = [symbols[j], symbols[i]]; }
+  const cards = [...symbols.slice(0, 8), ...symbols.slice(0, 8)];
+  for (let i = cards.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [cards[i], cards[j]] = [cards[j], cards[i]]; }
+  return cards;
+}
+// Flips two cards. state: { flips, matched: [indices] }. Returns what the player sees.
+export function memoryFlip(cards, state, a, b) {
+  const ok = i => Number.isInteger(i) && i >= 0 && i < cards.length && !state.matched.includes(i);
+  if (!ok(a) || !ok(b) || a === b) return { error: 'Pick two different face-down cards' };
+  state.flips++;
+  const match = cards[a] === cards[b];
+  if (match) state.matched.push(a, b);
+  return { a: { i: a, s: cards[a] }, b: { i: b, s: cards[b] }, match, solved: state.matched.length === cards.length };
+}
+
+// ---------- Minesweeper (8×8, 10 mines; the first square is always safe) ----------
+export const MINES = { w: 8, h: 8, n: 10 };
+export function minesAround(i, { w, h } = MINES) {
+  const r = Math.floor(i / w), c = i % w, out = [];
+  for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+    if (!dr && !dc) continue; const rr = r + dr, cc = c + dc;
+    if (rr >= 0 && rr < h && cc >= 0 && cc < w) out.push(rr * w + cc);
+  }
+  return out;
+}
+export function minesPlace(rand, first, { w, h, n } = MINES) {
+  const safe = new Set([first, ...minesAround(first, { w, h })]), mines = new Set();
+  while (mines.size < n) { const i = Math.floor(rand() * w * h); if (!safe.has(i)) mines.add(i); }
+  return [...mines].sort((x, y) => x - y);
+}
+// Reveals square i (opening empty areas). Returns { boom } or { opened: [[index, count], ...], solved }.
+export function minesReveal(mines, revealed, i, { w, h } = MINES) {
+  if (!Number.isInteger(i) || i < 0 || i >= w * h) return { error: 'Invalid square' };
+  const set = new Set(mines);
+  if (set.has(i)) return { boom: true, mines };
+  const seen = new Set(revealed), opened = [], stack = [i];
+  while (stack.length) {
+    const k = stack.pop(); if (seen.has(k)) continue; seen.add(k);
+    const count = minesAround(k, { w, h }).filter(x => set.has(x)).length;
+    opened.push([k, count]);
+    if (count === 0) for (const x of minesAround(k, { w, h })) if (!seen.has(x) && !set.has(x)) stack.push(x);
+  }
+  for (const [k] of opened) revealed.push(k);
+  return { opened, solved: revealed.length === w * h - mines.length };
+}

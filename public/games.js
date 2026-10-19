@@ -1,7 +1,7 @@
 // Kadena Nexus Games page. Paid rounds are generated and checked by the
 // server; practice rounds run here with the same puzzle code.
 import { chooseWallet, restoreWallet, forgetWallet } from './wallets.js';
-import { tilesGenerate, tilesSolved, tileNeighbors, logicGenerate, logicCheck } from './games-core.js';
+import { tilesGenerate, tilesSolved, tileNeighbors, logicGenerate, logicCheck, memoryGenerate, memoryFlip, MINES, minesPlace, minesReveal } from './games-core.js';
 
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -11,7 +11,12 @@ const clock = ms => { const s = Math.max(0, Math.round(ms / 1000)); return `${Ma
 const state = { config: null, user: null, csrf: null, data: null, me: null, stage: null };
 let wallet, timer, tracker;
 
+const PRACTICE = ['tiles', 'logic', 'memory', 'mines'];
 const ICON = {
+  word: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="6" height="7" rx="1"/><rect x="9" y="7" width="6" height="7" rx="1"/><rect x="16" y="7" width="6" height="7" rx="1"/><path d="M4 18h16"/></svg>',
+  memory: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="8" height="11" rx="1.5"/><rect x="13" y="9" width="8" height="11" rx="1.5"/><path d="M17 13l1 1.5-1 1.5-1-1.5z"/></svg>',
+  mines: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="13" r="6"/><path d="M12 3v4M4 13H2M22 13h-2M6.3 7.3 5 6M17.7 7.3 19 6"/></svg>',
+  pactbug: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="14" rx="5" ry="6"/><path d="M12 8V5M9 5l-2-2M15 5l2-2M7 12H3M21 12h-4M7 17l-3 2M17 17l3 2M12 8v12"/></svg>',
   tiles: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M15 17.5h5m-2.5-2.5 2.5 2.5-2.5 2.5"/></svg>',
   quiz: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14"/><circle cx="12" cy="17.5" r=".6" fill="currentColor"/></svg>',
   logic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M12 3v18"/></svg>',
@@ -96,7 +101,7 @@ function renderLobby() {
   $('#practice').innerHTML = d.games.map(g => `<article class="game-card">
       <div class="gc-top"><span class="gc-icon">${ICON[g.id]}</span><h3>${esc(g.name)}</h3></div>
       <p>${esc(g.blurb)}</p>
-      <div class="foot">${['tiles', 'logic'].includes(g.id) ? `<button class="btn ghost" data-practice="${g.id}">Practice</button>` : '<span class="state">Paid rounds only: questions stay secret.</span>'}</div></article>`).join('');
+      <div class="foot">${PRACTICE.includes(g.id) ? `<button class="btn ghost" data-practice="${g.id}">Practice</button>` : '<span class="state">Paid rounds only: answers stay secret.</span>'}</div></article>`).join('');
   $$('[data-connect]').forEach(b => b.onclick = () => action(b, connect));
   $$('[data-email]').forEach(b => b.onclick = () => { $('#emailCard').scrollIntoView({ behavior: 'smooth', block: 'center' }); $('#gEmail')?.focus(); });
   $$('[data-play]').forEach(b => b.onclick = () => action(b, () => playPaid(Number(b.dataset.play))));
@@ -148,7 +153,7 @@ async function openRound() {
 
 // ---------- Stage ----------
 function openStage(html) { clearInterval(timer); clearInterval(tracker); $('#lobby').hidden = true; const s = $('#stage'); s.hidden = false; s.innerHTML = html; scrollTo({ top: 0 }); }
-function closeStage() { clearInterval(timer); clearInterval(tracker); state.stage = null; $('#stage').hidden = true; $('#lobby').hidden = false; load().catch(e => notify(e.message)); }
+function closeStage() { document.onkeydown = null; clearInterval(timer); clearInterval(tracker); state.stage = null; $('#stage').hidden = true; $('#lobby').hidden = false; load().catch(e => notify(e.message)); }
 function bar(title, pills) {
   return `<div class="g-bar"><h2>${esc(title)}</h2><button class="g-back" id="gClose" aria-label="Back to games">← Games</button></div><div class="g-status">${pills}</div>`;
 }
@@ -167,6 +172,8 @@ async function playPaid(cid) {
   begin({ mode: 'paid', round, session: s, game: s.game, puzzle: s.puzzle });
 }
 function practice(game) {
+  if (game === 'memory') return begin({ mode: 'practice', game, puzzle: { cards: 16 }, secret: { cards: memoryGenerate(Math.random) }, local: { flips: 0, matched: [], open: null, times: [] } });
+  if (game === 'mines') return begin({ mode: 'practice', game, puzzle: { ...MINES }, secret: { mines: null }, local: { revealed: [], moves: 0, times: [] } });
   const puzzle = game === 'tiles' ? tilesGenerate(Math.random) : logicGenerate(Math.random).puzzle;
   begin({ mode: 'practice', game, puzzle });
 }
@@ -177,7 +184,7 @@ function begin(st) {
   openStage(bar(name, pills) + '<div id="gBoard"></div>');
   $('#gClose').onclick = () => { if (state.stage?.mode === 'paid' && !state.stage.done && !confirm('Leave this puzzle? Your timer keeps running, and you can resume it from the games list.')) return; closeStage(); };
   startClock($('#gClock'), st.mode, st.session?.expires_at);
-  ({ tiles: renderTiles, logic: renderLogic, quiz: renderQuiz, riddle: renderRiddle })[st.game]();
+  ({ tiles: renderTiles, logic: renderLogic, quiz: renderQuiz, riddle: renderRiddle, word: renderWord, memory: renderMemory, mines: renderMines, pactbug: renderPactbug })[st.game]();
 }
 
 // Sliding tiles
@@ -236,8 +243,146 @@ function renderRiddle() {
   $('#gForm').onsubmit = e => { e.preventDefault(); finish(); };
 }
 
+// ---------- Interactive games: each move goes to the server (paid) or runs here (practice) ----------
+async function sendMove(move) {
+  const st = state.stage; if (!st || st.done) return null;
+  move.t = Math.round(performance.now() - st.t0);
+  if (st.mode === 'practice') {
+    const L = st.local;
+    if (st.game === 'memory') {
+      if (L.open === null) { L.open = move.card; return { card: { i: move.card, s: st.secret.cards[move.card] } }; }
+      const r = memoryFlip(st.secret.cards, L, L.open, move.card); L.open = null; return r;
+    }
+    if (L.revealed.includes(move.cell)) return { opened: [] };
+    st.secret.mines ||= minesPlace(Math.random, move.cell); L.moves++;
+    const r = minesReveal(st.secret.mines, L.revealed, move.cell);
+    if (r.boom) { st.done = true; clearInterval(timer); practiceOver(st, 'Boom! You hit a mine.', r.mines); return null; }
+    return r;
+  }
+  try {
+    const r = await api(`/games/sessions/${st.session.id}/move`, { move });
+    if (r.over) { st.done = true; clearInterval(timer); setTimeout(() => showMiss(st, r), r.mines || r.word ? 1400 : 0); return r; }
+    return r;
+  } catch (e) { notify(e.message); return null; }
+}
+function practiceOver(st, message, mines) {
+  if (mines) mines.forEach(i => { const b = document.querySelector(`.mgrid [data-i="${i}"]`); if (b) { b.classList.add('mine'); b.textContent = '✹'; } });
+  setTimeout(() => {
+    openStage(`<div class="g-result"><h3>${esc(message)}</h3><p>Practice round over. Try again with a new board.</p>
+      <div class="g-actions" style="width:100%;max-width:380px"><button class="btn ghost" id="gBack">Back to games</button><button class="btn" id="gAgain">Play again</button></div></div>`);
+    $('#gBack').onclick = closeStage; $('#gAgain').onclick = () => practice(st.game);
+  }, 1400);
+}
+
+// Kadena Word
+function renderWord() {
+  const st = state.stage; st.rows = [...(st.session?.state?.guesses || [])]; st.typed = ''; st.keys = {};
+  const rank = { miss: 1, near: 2, hit: 3 };
+  for (const r of st.rows) [...r.g].forEach((ch, i) => { if ((rank[r.score[i]] || 0) > (rank[st.keys[ch]] || 0)) st.keys[ch] = r.score[i]; });
+  const KB = ['qwertyuiop', 'asdfghjkl', 'zxcvbnm'];
+  const draw = () => {
+    const rows = [...st.rows.map(r => ({ letters: r.g, score: r.score })), ...(st.rows.length < 6 ? [{ letters: st.typed.padEnd(5), score: null, now: true }] : [])];
+    while (rows.length < 6) rows.push({ letters: '     ', score: null });
+    $('#gBoard').innerHTML = `<p class="g-help">Guess the hidden 5-letter word. <b class="wk hit">Green</b> right place, <b class="wk near">gold</b> in the word, gray not in it.</p>
+      <div class="wgrid" aria-live="polite">${rows.map(r => `<div class="wrow ${r.now ? 'now' : ''}">${[...r.letters].map((ch, i) => `<span class="wc ${r.score ? r.score[i] : ''}">${esc(ch.trim().toUpperCase())}</span>`).join('')}</div>`).join('')}</div>
+      <div class="kb">${KB.map((row, k) => `<div>${k === 2 ? '<button data-k="enter" class="wide">Enter</button>' : ''}${[...row].map(ch => `<button data-k="${ch}" class="${st.keys[ch] || ''}">${ch.toUpperCase()}</button>`).join('')}${k === 2 ? '<button data-k="back" class="wide" aria-label="Delete">⌫</button>' : ''}</div>`).join('')}</div>`;
+    $$('.kb [data-k]').forEach(b => b.onclick = () => key(b.dataset.k));
+  };
+  let busy = false;
+  const key = async k => {
+    if (busy || st.done) return;
+    if (k === 'back') { st.typed = st.typed.slice(0, -1); return draw(); }
+    if (k === 'enter') {
+      if (st.typed.length !== 5) return notify('Type 5 letters first.');
+      busy = true; const guess = st.typed;
+      const r = await sendMove({ guess }); busy = false;
+      if (!r || r.error) return;
+      st.rows.push({ g: guess, score: r.score }); st.typed = '';
+      [...guess].forEach((ch, i) => { if ((rank[r.score[i]] || 0) > (rank[st.keys[ch]] || 0)) st.keys[ch] = r.score[i]; });
+      draw();
+      if (r.word) notify(`The word was ${r.word.toUpperCase()}.`);
+      if (r.solved) finish();
+      return;
+    }
+    if (/^[a-z]$/.test(k) && st.typed.length < 5) { st.typed += k; draw(); }
+  };
+  document.onkeydown = e => { if (state.stage !== st || st.done) return; if (e.key === 'Enter') key('enter'); else if (e.key === 'Backspace') key('back'); else if (/^[a-zA-Z]$/.test(e.key)) key(e.key.toLowerCase()); };
+  draw();
+}
+
+// Memory Match
+function renderMemory() {
+  const st = state.stage, saved = st.session?.state;
+  st.face = {}; st.matched = new Set(); st.flips = saved?.flips || 0; st.open = null; st.lock = false;
+  (saved?.matched || []).forEach(([i, sym]) => { st.face[i] = sym; st.matched.add(i); });
+  if (saved?.open) { st.face[saved.open[0]] = saved.open[1]; st.open = saved.open[0]; }
+  const draw = () => {
+    $('#gBoard').innerHTML = `<p class="g-help">Tap two cards. Find all 8 pairs. Flips: <b>${st.flips}</b></p>
+      <div class="memgrid">${[...Array(16).keys()].map(i => `<button data-i="${i}" class="${st.matched.has(i) ? 'done' : st.face[i] ? 'up' : ''}" aria-label="${st.face[i] ? 'Card ' + st.face[i] : 'Face-down card'}">${st.face[i] ? esc(st.face[i]) : ''}</button>`).join('')}</div>`;
+    $$('.memgrid [data-i]').forEach(b => b.onclick = () => tap(Number(b.dataset.i)));
+  };
+  const tap = async i => {
+    if (st.lock || st.done || st.matched.has(i) || i === st.open) return;
+    st.lock = true;
+    const r = await sendMove({ card: i });
+    if (!r || r.error) { st.lock = false; return; }
+    if (r.card) { st.open = i; st.face[i] = r.card.s; st.lock = false; return draw(); }
+    st.flips++; st.face[r.a.i] = r.a.s; st.face[r.b.i] = r.b.s; st.open = null; draw();
+    if (r.match) { st.matched.add(r.a.i); st.matched.add(r.b.i); st.lock = false; draw(); if (r.solved) finish(); return; }
+    setTimeout(() => { delete st.face[r.a.i]; delete st.face[r.b.i]; st.lock = false; draw(); }, 900);
+  };
+  draw();
+}
+
+// Minesweeper
+function renderMines() {
+  const st = state.stage, w = MINES.w, h = MINES.h;
+  st.cells = {}; (st.session?.state?.revealed || []).forEach(([i, n]) => { st.cells[i] = n; });
+  st.flags = new Set(); st.flagMode = false; st.busy = false;
+  const draw = () => {
+    $('#gBoard').innerHTML = `<p class="g-help">Open every square without a mine. Numbers count the mines touching a square. Mines: ${MINES.n} · Flags: ${st.flags.size}</p>
+      <div class="mgrid" style="grid-template-columns:repeat(${w},1fr)">${[...Array(w * h).keys()].map(i => {
+        const n = st.cells[i];
+        return n !== undefined ? `<button data-i="${i}" class="open n${n}" disabled>${n || ''}</button>` : `<button data-i="${i}" class="${st.flags.has(i) ? 'flag' : ''}" aria-label="Closed square">${st.flags.has(i) ? '⚑' : ''}</button>`;
+      }).join('')}</div>
+      <div class="g-actions"><button class="btn ghost" id="gFlag" aria-pressed="${st.flagMode}">${st.flagMode ? '⚑ Flag mode on: tap to flag' : '⚑ Flag mode off: tap to open'}</button></div>`;
+    $$('.mgrid [data-i]:not(.open)').forEach(b => {
+      b.onclick = () => tap(Number(b.dataset.i));
+      b.oncontextmenu = e => { e.preventDefault(); flag(Number(b.dataset.i)); };
+    });
+    $('#gFlag').onclick = () => { st.flagMode = !st.flagMode; draw(); };
+  };
+  const flag = i => { st.flags.has(i) ? st.flags.delete(i) : st.flags.add(i); draw(); };
+  const tap = async i => {
+    if (st.busy || st.done) return;
+    if (st.flagMode) return flag(i);
+    if (st.flags.has(i)) return;
+    st.busy = true;
+    const r = await sendMove({ cell: i }); st.busy = false;
+    if (!r || r.error) return;
+    if (r.lost) { (r.mines || []).forEach(m => { const b = document.querySelector(`.mgrid [data-i="${m}"]`); if (b) { b.classList.add('mine'); b.textContent = '✹'; } }); return; }
+    (r.opened || []).forEach(([k, n]) => { st.cells[k] = n; st.flags.delete(k); });
+    draw();
+    if (r.solved) finish();
+  };
+  draw();
+}
+
+// Spot the Pact Bug
+function renderPactbug() {
+  const st = state.stage;
+  $('#gBoard').innerHTML = `<form class="gq" id="gForm">
+    <div class="qn"><p>This Pact function has one security mistake. Which is it?</p><pre class="pact"><code>${esc(st.puzzle.code)}</code></pre></div>
+    <fieldset class="qn">${st.puzzle.options.map((o, k) => `<label><input type="radio" name="bug" value="${k}" required> ${esc(o)}</label>`).join('')}</fieldset>
+    <div class="qn"><p>In your own words: why is it dangerous, or how would you fix it?</p><textarea id="gWritten" maxlength="1200" placeholder="A sentence or two is enough." required></textarea></div>
+    <div class="g-actions"><button class="btn orange" type="submit">Submit answer</button></div></form>`;
+  $('#gForm').onsubmit = e => { e.preventDefault(); if ($('#gWritten').value.trim().length < 20) return notify('Write at least a full sentence.'); finish(); };
+}
+
 function playData() {
   const st = state.stage;
+  if (st.game === 'pactbug') { const c = document.querySelector('input[name=bug]:checked'); return { choice: c ? Number(c.value) : -1, written: $('#gWritten').value }; }
+  if (['word', 'memory', 'mines'].includes(st.game)) return {};
   if (st.game === 'tiles') return { moves: st.moves, times: st.times };
   if (st.game === 'logic') return { grid: st.grid, entries: st.entries };
   if (st.game === 'quiz') return { choices: st.puzzle.questions.map((_, i) => { const c = document.querySelector(`input[name=q${i}]:checked`); return c ? Number(c.value) : -1; }), written: $('#gWritten').value };
@@ -247,7 +392,7 @@ async function finish() {
   const st = state.stage; if (!st || st.done) return; st.done = true; clearInterval(timer);
   const ms = performance.now() - st.t0;
   if (st.mode === 'practice') {
-    const extra = st.game === 'tiles' ? ` with ${st.moves.length} moves` : '';
+    const extra = st.game === 'tiles' ? ` with ${st.moves.length} moves` : st.game === 'memory' ? ` with ${st.local.flips} flips` : '';
     openStage(`<div class="g-result"><h3>Solved!</h3><p>You finished in ${clock(ms)}${extra}. In a paid round, a win like this is reviewed and paid by the AI agent.</p>
       <div class="g-actions" style="width:100%;max-width:380px"><button class="btn ghost" id="gBack">Back to games</button><button class="btn" id="gAgain">Play again</button></div></div>`);
     $('#gBack').onclick = closeStage; $('#gAgain').onclick = () => practice(st.game); return;
@@ -255,13 +400,16 @@ async function finish() {
   let r;
   try { r = await api(`/games/sessions/${st.session.id}/finish`, { play: playData() }); }
   catch (e) { st.done = false; notify(e.message); return; }
-  if (!r.solved) {
+  if (!r.solved) return showMiss(st, r);
+  showWin(st.round, r.summary);
+}
+function showMiss(st, r) {
+  {
+    document.onkeydown = null;
     openStage(`<div class="g-result"><h3>Not this time</h3><p>${esc(r.message)}</p><p>${r.attempts_left > 0 ? `You have ${r.attempts_left} ${r.attempts_left === 1 ? 'try' : 'tries'} left in this round, each with a fresh puzzle.` : 'That was your last try in this round.'}</p>
       <div class="g-actions" style="width:100%;max-width:380px"><button class="btn ghost" id="gBack">Back to games</button>${r.attempts_left > 0 ? '<button class="btn orange" id="gAgain">Try again</button>' : ''}</div></div>`);
     $('#gBack').onclick = closeStage; if ($('#gAgain')) $('#gAgain').onclick = () => action($('#gAgain'), () => playPaid(st.round.id));
-    return;
   }
-  showWin(st.round, r.summary);
 }
 
 // Follows a win from escrow reservation to payout.

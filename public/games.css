@@ -77,3 +77,34 @@
 .g-result .links{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;font-size:14px}
 .g-bar{flex-wrap:nowrap}.g-bar h2{min-width:0}
 @media (max-width:480px){.games-page .brand span{font-size:16px}.games-page .theme-btn{display:none}.games-page .top .wrap{gap:8px}}
+
+/* Kadena Word */
+.wgrid{display:grid;gap:6px;max-width:330px;margin:0 auto 16px}
+.wrow{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.wc{aspect-ratio:1;display:grid;place-items:center;border:2px solid var(--line);border-radius:8px;font:800 clamp(20px,6vw,28px) var(--display);text-transform:uppercase;background:var(--bg)}
+.wrow.now .wc{border-color:color-mix(in srgb,var(--teal) 50%,var(--line))}
+.wc.hit,.kb .hit,.wk.hit{background:#2E8B57;border-color:#2E8B57;color:#fff}
+.wc.near,.kb .near,.wk.near{background:#C9A227;border-color:#C9A227;color:#1b1b1b}
+.wc.miss,.kb .miss{background:var(--surface-2);border-color:var(--surface-2);color:var(--muted)}
+.wk{padding:0 4px;border-radius:4px}
+.kb{display:grid;gap:6px;max-width:480px;margin:0 auto;touch-action:manipulation}
+.kb>div{display:flex;gap:5px;justify-content:center}
+.kb button{flex:1;max-width:42px;border:0;border-radius:8px;background:var(--surface);border:1px solid var(--line);padding:14px 0;font:700 15px var(--body)}
+.kb button.wide{max-width:64px;flex:1.6;font-size:13px}
+/* Memory Match */
+.memgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;max-width:400px;margin:0 auto;touch-action:manipulation}
+.memgrid button{aspect-ratio:1;border:0;border-radius:12px;background:var(--teal);color:#fff;font:700 clamp(26px,8vw,38px) var(--body);background-image:radial-gradient(circle at 30% 30%,rgba(255,255,255,.18),transparent 60%)}
+.memgrid button.up{background:var(--bg);color:var(--ink);border:2px solid var(--teal)}
+.memgrid button.done{background:color-mix(in srgb,#2E8B57 20%,var(--bg));color:#2E8B57;border:2px solid #2E8B57}
+/* Minesweeper */
+.mgrid{display:grid;gap:3px;max-width:400px;margin:0 auto;touch-action:manipulation}
+.mgrid button{aspect-ratio:1;border:0;border-radius:5px;background:var(--teal);color:#fff;font:800 clamp(14px,4.5vw,20px) var(--display);padding:0}
+.mgrid button.open{background:var(--surface);color:var(--ink);border:1px solid var(--line)}
+.mgrid button.flag{background:var(--orange);color:var(--orange-ink)}
+.mgrid button.mine{background:var(--bad);color:#fff}
+.mgrid .n1{color:#1E6FD9}.mgrid .n2{color:#2E8B57}.mgrid .n3{color:#C0392B}.mgrid .n4{color:#6C3FB5}.mgrid .n5{color:#A0522D}.mgrid .n6{color:#178A8A}
+/* Spot the Pact Bug */
+.pact{margin:0;padding:12px;border-radius:10px;background:#0B2028;color:#E6F1F4;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow-x:auto;white-space:pre}
+.gq,.gq .qn,.gq fieldset{min-width:0;max-width:100%}
+.pact{max-width:100%;font-size:12px}
+.pact{white-space:pre-wrap;overflow-wrap:anywhere}
