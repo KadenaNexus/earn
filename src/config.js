@@ -29,7 +29,9 @@ export function config(env = process.env) {
     // Kadena Nexus Games: their own AI payout limits, separate from tasks.
     games: {
       maxReward: env.GAMES_MAX_REWARD_KDA || '5', dailyKda: env.GAMES_DAILY_KDA || '50',
-      winsPerDay: Number(env.GAMES_WINS_PER_WALLET_PER_DAY || 1), attempts: Number(env.GAMES_ATTEMPTS_PER_ROUND || 3),
+      winsPerDay: Number(env.GAMES_WINS_PER_WALLET_PER_DAY || 1),
+      // Off by default: the daily AI games budget caps the loss. Turn on if one person farms with many wallets.
+      requireEmail: env.GAMES_REQUIRE_EMAIL === 'true', attempts: Number(env.GAMES_ATTEMPTS_PER_ROUND || 3),
     },
     // Email confirmation (required to play games for KDA), sent with Resend.
     mail: { resendKey: env.RESEND_API_KEY || '', from: env.EMAIL_FROM || 'Kadena Earn <alerts@kadena.ws>' },

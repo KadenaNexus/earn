@@ -48,10 +48,11 @@ test('Quiz and riddle answers stay on the server and are graded there', () => {
  assert.equal(disposable('x@mailinator.com'), true);
 });
 
-async function setup(schema) {
+async function setup(schema, requireEmail = true) {
  const db = await testDatabase(schema), adminKey = testKey(), opsKey = testKey();
  const c = { ...testConfig(adminKey, opsKey), module: 'kadena-earn' };
  c.ai = { ...c.ai, apiKey: '', model: 'test-model', maxReward: '1', dailyKda: '10', perTick: 10 };
+ c.games = { ...c.games, requireEmail };
  const mail = []; c.sendMail = async m => { mail.push(m); };
  const chain = new TestChain(c), worker = new Worker(db, chain, c);
  const calls = []; let next = () => ({ decision: 'approve', confidence: 0.95, reasons: 'Fair play.', note_to_contributor: 'Well played.' });
@@ -176,5 +177,24 @@ test('Bot-like play goes to the owner without the model, and attempts run out', 
    assert.equal(last.attempts_left, 0);
    assert.equal((await r.call('/games/' + riddles + '/play', {})).status, 409);
    assert.equal((await t.db.query("SELECT state FROM task_starts t JOIN users u ON u.id=t.user_id WHERE t.campaign_id=$1", [riddles])).rows[0].state, 'out_of_attempts');
+ } finally { await t.close(); }
+});
+
+test('Email is optional by default: a signed-in wallet can play, and the daily cap still applies', async () => {
+ const t = await setup('ke_games_noemail', false);
+ try {
+   assert.equal(t.c.games.requireEmail, false);
+   const cid = await t.round('riddle');
+   const rules = (await t.owner.raw('/games')).data.rules;
+   assert.equal(rules.email_required, false);
+   const u = await client(t.base, testKey());
+   const s = (await u.call('/games/' + cid + '/play', {})).data;
+   assert.ok(s.id, JSON.stringify(s));
+   const { secret } = await t.secret(s.id);
+   await t.db.query("UPDATE game_sessions SET started_at=now()-interval '1 minute' WHERE id=$1", [s.id]);
+   const answers = secret.ids.map(id => RIDDLES[id].answers[0]);
+   assert.equal((await u.call('/games/sessions/' + s.id + '/finish', { play: { answers } })).data.solved, true);
+   const cid2 = await t.round('riddle');
+   assert.match((await u.call('/games/' + cid2 + '/play', {})).data.error, /today/);
  } finally { await t.close(); }
 });
