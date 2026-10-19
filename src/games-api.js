@@ -49,7 +49,9 @@ export function gameRoutes(app, db, chain, c, { sendMail } = {}) {
   const mailer = sendMail || (c.mail?.resendKey ? resendSender(c.mail) : null);
   const assertWrites = () => requireValue(c.writes, 503, 'Blockchain writes are disabled until deployment and review are ready');
   const assertRunning = async tx => requireValue(!(await pauseState(tx, { lock: true })).paused, 409, 'Payouts are paused right now. Try again later.');
-  const attemptsUsed = async (tx, cid, uid) => Number((await tx.query('SELECT count(*) n FROM game_sessions WHERE campaign_id=$1 AND user_id=$2', [cid, uid])).rows[0].n);
+  // A win whose escrow reservation failed does not use up a try: the player may play again.
+  const attemptsUsed = async (tx, cid, uid) => Number((await tx.query(`SELECT count(*) n FROM game_sessions g LEFT JOIN submissions s ON s.id=g.submission_id
+    WHERE g.campaign_id=$1 AND g.user_id=$2 AND NOT (g.status='solved' AND s.status='reservation_failed')`, [cid, uid])).rows[0].n);
   const winsToday = async (tx, uid, game) => Number((await tx.query(`SELECT count(*) n FROM submissions s JOIN task_campaigns c ON c.id=s.campaign_id
     WHERE s.user_id=$1 AND c.game=$2 AND s.submitted_at>now()-interval '24 hours' AND s.status NOT IN ('rejected','reservation_failed')`, [uid, game])).rows[0].n);
 
@@ -131,7 +133,8 @@ export function gameRoutes(app, db, chain, c, { sendMail } = {}) {
     const cid = z.coerce.number().int().positive().parse(req.params.id); assertWrites();
     res.json(await db.tx(async tx => {
       await assertRunning(tx);
-      const me = (await tx.query('SELECT email_verified_at FROM users WHERE id=$1', [req.user.id])).rows[0];
+      // One player's play/finish requests run one at a time (same lock order: user row first).
+      const me = (await tx.query('SELECT email_verified_at FROM users WHERE id=$1 FOR UPDATE', [req.user.id])).rows[0];
       requireValue(!c.games.requireEmail || me.email_verified_at, 403, 'Confirm your email to play for KDA');
       const row = (await tx.query('SELECT * FROM task_campaigns WHERE id=$1 FOR UPDATE', [cid])).rows[0];
       requireValue(row?.game, 404, 'Game round not found');
@@ -150,6 +153,9 @@ export function gameRoutes(app, db, chain, c, { sendMail } = {}) {
         const chainOccupied = row.chain_snapshot ? Number(row.chain_snapshot['paid-count']) + Number(row.chain_snapshot['reserved-count']) : 0;
         requireValue(Math.max(occupied, chainOccupied) < row.max_rewards, 409, 'All rewards in this round are taken or being played. Try again soon.');
         start = (await tx.query(`INSERT INTO task_starts(campaign_id,user_id,expires_at) VALUES($1,$2,least(now()+interval '30 minutes',$3)) ON CONFLICT(campaign_id,user_id) DO UPDATE SET state='started',started_at=now(),expires_at=excluded.expires_at RETURNING *`, [cid, req.user.id, row.deadline])).rows[0];
+      } else {
+        // A later try gets its full time: extend the held slot to cover it.
+        start = (await tx.query(`UPDATE task_starts SET expires_at=greatest(expires_at,least(now()+make_interval(mins=>$2::int),$3)) WHERE id=$1 RETURNING *`, [start.id, GAMES[row.game].minutes + 5, row.deadline])).rows[0];
       }
       const round = newRound(row.game);
       const s = (await tx.query(`INSERT INTO game_sessions(id,campaign_id,user_id,game,puzzle,secret,state,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,least(now()+make_interval(mins=>$8::int),$9)) RETURNING *`,
@@ -184,7 +190,8 @@ export function gameRoutes(app, db, chain, c, { sendMail } = {}) {
       requireValue(INTERACTIVE.includes(s.game), 400, 'This game has no moves');
       requireValue(s.status === 'playing', 409, 'This round is already finished');
       if (s.late) return { ...(await missed(tx, s, null, 'Time ran out for this puzzle.', 'expired')), over: true };
-      const r = moveRound(s.game, s.secret, s.state, move);
+      // Timing for bot checks comes from the server clock, never from the browser.
+      const r = moveRound(s.game, s.secret, s.state, { ...move, t: Date.now() - Date.parse(s.started_at) });
       requireValue(!r.error, 400, r.error);
       await tx.query('UPDATE game_sessions SET secret=$2,state=$3 WHERE id=$1', [sid, JSON.stringify(s.secret), JSON.stringify(s.state)]);
       if (r.lost) return { ...r, ...(await missed(tx, s, null, s.game === 'mines' ? 'You hit a mine.' : 'Out of guesses.')), over: true };
@@ -197,6 +204,7 @@ export function gameRoutes(app, db, chain, c, { sendMail } = {}) {
     const { play } = z.object({ play: z.record(z.string(), z.unknown()) }).strict().parse(req.body || {});
     res.json(await db.tx(async tx => {
       await assertRunning(tx);
+      await tx.query('SELECT 1 FROM users WHERE id=$1 FOR UPDATE', [req.user.id]);
       const s = (await tx.query("SELECT *,extract(epoch FROM now()-started_at)::float AS seconds,expires_at<now() AS late FROM game_sessions WHERE id=$1 AND user_id=$2 FOR UPDATE", [sid, req.user.id])).rows[0];
       requireValue(s, 404, 'Round not found');
       requireValue(s.status === 'playing', 409, 'This round is already finished');
@@ -217,6 +225,11 @@ export function gameRoutes(app, db, chain, c, { sendMail } = {}) {
         return out(r.message);
       }
       requireValue(campaign.status === 'open' && Date.parse(campaign.deadline) > Date.now(), 409, 'This round closed before you finished');
+      // Re-check the daily cap at finish: rounds started earlier the same day cannot all be won.
+      if (await winsToday(tx, req.user.id, s.game) >= c.games.winsPerDay) {
+        await tx.query("UPDATE game_sessions SET status='failed',finished_at=now(),play=$2,result=$3 WHERE id=$1", [sid, JSON.stringify(play), JSON.stringify({ message: 'daily_cap' })]);
+        return out(`You already won ${GAMES[s.game].name} today, so this round cannot pay again until tomorrow.`);
+      }
       const start = (await tx.query('SELECT * FROM task_starts WHERE campaign_id=$1 AND user_id=$2 FOR UPDATE', [s.campaign_id, req.user.id])).rows[0];
       requireValue(start?.state === 'started' && Date.parse(start.expires_at) > Date.now(), 409, 'Your reward slot expired. Start the round again.');
       const proof = { result: r.summary, play: JSON.stringify({ ...r.review, flags: r.flags }) };

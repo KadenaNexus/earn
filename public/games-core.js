@@ -116,13 +116,18 @@ export function normalizeAnswer(text) {
     .replace(/[^a-z0-9\s]/g, ' ').replace(/\b(a|an|the|my|your|its|it is|it's)\b/g, ' ').replace(/\s+/g, ' ').trim();
 }
 const singular = w => w.length > 3 && w.endsWith('s') && !w.endsWith('ss') ? w.slice(0, -1) : w;
+// A short answer that contains an accepted answer. Lists of guesses ("keyboard clock egg")
+// and negations ("not a cold") do not count; spacing is ignored ("key board" = "keyboard").
 export function answerMatches(given, accepted) {
   const g = normalizeAnswer(given);
-  if (!g || g.split(' ').length > 5) return false;
+  if (!g) return false;
   const words = g.split(' ').map(singular);
+  if (words.some(w => ['not', 'no', 'never', 'isnt', 'nor'].includes(w))) return false;
   return accepted.some(a => {
-    const n = normalizeAnswer(a).split(' ').map(singular).join(' ');
-    return words.join(' ') === n || (` ${words.join(' ')} `).includes(` ${n} `);
+    const target = normalizeAnswer(a).split(' ').map(singular);
+    if (words.length > target.length + 2) return false;
+    const joined = words.join(' '), t = target.join(' ');
+    return joined === t || (` ${joined} `).includes(` ${t} `) || words.join('') === target.join('');
   });
 }
 

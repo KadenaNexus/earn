@@ -108,7 +108,7 @@ function renderEmail() {
   const card = $('#emailCard'), me = state.me;
   card.hidden = !state.user || me?.email_verified || !state.data.rules.email_required;
   if (card.hidden) return;
-  if (!state.data.rules.email_ready) { card.innerHTML = '<h3>Email confirmation opens soon</h3><p>Paid rounds need a confirmed email. This is being switched on; practice is open now.</p>'; return; }
+  if (!state.data.rules.email_ready) { card.innerHTML = '<h3>Email confirmation opens soon</h3><p>Paid rounds need a confirmed email. This is being switched on.</p>'; return; }
   card.innerHTML = `<h3>Confirm your email to play for KDA</h3>
     <p>One email per wallet keeps prizes for real players. We only use it for this confirmation and game notices.</p>
     ${me.pending_email ? `<p>We sent a link to <b>${esc(me.pending_email)}</b>. Open it to confirm, then come back here.</p>` : ''}
@@ -139,16 +139,19 @@ async function openRound() {
     deadline: new Date(Date.now() + Number($('#oHours').value) * 3600000).toISOString(), steps: ['Play'], proof_schema: [{ key: 'result', label: 'Game result', type: 'text' }], game, featured: false, ai_review: true };
   wallet ||= restoreWallet(); const connected = await wallet.connect(state.config.network);
   if (connected !== state.user.account) throw new Error('Select the signed-in owner account in your wallet.');
-  const created = await api('/admin/campaigns', body, { money: true });
-  const prepared = await api(`/admin/campaigns/${created.campaign.id}/funding-command`, {});
+  const same = state.draftRound && state.draftRound.game === game && state.draftRound.reward === body.reward_kda && state.draftRound.count === body.max_rewards;
+  const id = same ? state.draftRound.id : (await api('/admin/campaigns', body, { money: true })).campaign.id;
+  state.draftRound = { id, game, reward: body.reward_kda, count: body.max_rewards };
+  const prepared = await api(`/admin/campaigns/${id}/funding-command`, {});
   const signed_command = await wallet.sign(prepared.command);
-  await api(`/admin/campaigns/${created.campaign.id}/confirm-funding`, { signed_command }, { money: true });
+  await api(`/admin/campaigns/${id}/confirm-funding`, { signed_command }, { money: true });
+  state.draftRound = null;
   notify('Funding sent. The round opens once Chainweb confirms it, usually within a few minutes.');
   await load();
 }
 
 // ---------- Stage ----------
-function openStage(html) { clearInterval(timer); clearInterval(tracker); $('#lobby').hidden = true; const s = $('#stage'); s.hidden = false; s.innerHTML = html; scrollTo({ top: 0 }); }
+function openStage(html) { document.onkeydown = null; clearInterval(timer); clearInterval(tracker); $('#lobby').hidden = true; const s = $('#stage'); s.hidden = false; s.innerHTML = html; scrollTo({ top: 0 }); }
 function closeStage() { document.onkeydown = null; clearInterval(timer); clearInterval(tracker); state.stage = null; $('#stage').hidden = true; $('#lobby').hidden = false; load().catch(e => notify(e.message)); }
 function bar(title, pills) {
   return `<div class="g-bar"><h2>${esc(title)}</h2><button class="g-back" id="gClose" aria-label="Back to games">← Games</button></div><div class="g-status">${pills}</div>`;
@@ -174,11 +177,12 @@ function practice(game) {
   begin({ mode: 'practice', game, puzzle });
 }
 function begin(st) {
-  state.stage = { ...st, t0: performance.now(), done: false };
+  const since = st.session?.started_at ? Math.max(0, Date.now() - Date.parse(st.session.started_at)) : 0;
+  state.stage = { ...st, t0: performance.now() - since, done: false };
   const name = state.data.games.find(g => g.id === st.game).name;
   const pills = `<span class="g-pill" id="gClock"></span>${st.mode === 'paid' ? `<span class="g-pill">Prize ${fmt(st.round?.reward)} KDA</span><span class="g-pill">${st.session.attempts_left} more ${st.session.attempts_left === 1 ? 'try' : 'tries'} after this</span>` : '<span class="g-pill">Practice</span>'}`;
   openStage(bar(name, pills) + '<div id="gBoard"></div>');
-  $('#gClose').onclick = () => { if (state.stage?.mode === 'paid' && !state.stage.done && !confirm('Leave this puzzle? Your timer keeps running, and you can resume it from the games list.')) return; closeStage(); };
+  $('#gClose').onclick = () => { if (state.stage?.mode === 'paid' && !state.stage.done && !confirm(['word', 'memory', 'mines'].includes(state.stage.game) ? 'Leave this puzzle? Your timer keeps running, and you can resume it from the games list.' : 'Leave this puzzle? Your timer keeps running. If you resume, this puzzle starts again from the beginning.')) return; closeStage(); };
   startClock($('#gClock'), st.mode, st.session?.expires_at);
   ({ tiles: renderTiles, logic: renderLogic, quiz: renderQuiz, riddle: renderRiddle, word: renderWord, memory: renderMemory, mines: renderMines, pactbug: renderPactbug })[st.game]();
 }
@@ -257,7 +261,13 @@ async function sendMove(move) {
   }
   try {
     const r = await api(`/games/sessions/${st.session.id}/move`, { move });
-    if (r.over) { st.done = true; clearInterval(timer); setTimeout(() => showMiss(st, r), r.mines || r.word ? 1400 : 0); return r; }
+    if (r.over) {
+      st.done = true; clearInterval(timer);
+      (r.mines || []).forEach(m => { const b = document.querySelector(`.mgrid [data-i="${m}"]`); if (b) { b.classList.add('mine'); b.textContent = '✹'; } });
+      if (r.word) notify(`The word was ${r.word.toUpperCase()}.`);
+      setTimeout(() => showMiss(st, r), r.mines || r.word ? 1400 : 0);
+      return null;
+    }
     return r;
   } catch (e) { notify(e.message); return null; }
 }
@@ -304,6 +314,7 @@ function renderWord() {
   };
   document.onkeydown = e => { if (state.stage !== st || st.done) return; if (e.key === 'Enter') key('enter'); else if (e.key === 'Backspace') key('back'); else if (/^[a-zA-Z]$/.test(e.key)) key(e.key.toLowerCase()); };
   draw();
+  if (st.rows.at(-1)?.score.every(x => x === 'hit')) finish();
 }
 
 // Memory Match
@@ -328,6 +339,7 @@ function renderMemory() {
     setTimeout(() => { delete st.face[r.a.i]; delete st.face[r.b.i]; st.lock = false; draw(); }, 900);
   };
   draw();
+  if (st.matched.size === 16) finish();
 }
 
 // Minesweeper
@@ -362,6 +374,7 @@ function renderMines() {
     if (r.solved) finish();
   };
   draw();
+  if (Object.keys(st.cells).length === MINES.w * MINES.h - MINES.n) finish();
 }
 
 // Spot the Pact Bug
@@ -395,7 +408,14 @@ async function finish() {
   }
   let r;
   try { r = await api(`/games/sessions/${st.session.id}/finish`, { play: playData() }); }
-  catch (e) { st.done = false; notify(e.message); return; }
+  catch (e) {
+    st.done = false; notify(e.message);
+    const bar = document.getElementById('gRetry') || Object.assign(document.createElement('div'), { id: 'gRetry', className: 'g-actions' });
+    bar.innerHTML = '<button class="btn orange" id="gRetryBtn">Submit again</button>';
+    $('#gBoard')?.after(bar);
+    $('#gRetryBtn').onclick = () => { bar.remove(); finish(); };
+    return;
+  }
   if (!r.solved) return showMiss(st, r);
   showWin(st.round, r.summary);
 }
