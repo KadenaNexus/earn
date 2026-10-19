@@ -81,7 +81,7 @@ export function moveRound(game, secret, state, move, rand = secureRand) {
     const score = wordScore(guess, secret.word);
     state.guesses.push({ g: guess, score }); stamp();
     const solved = guess === secret.word, lost = !solved && state.guesses.length >= WORD_TRIES;
-    return { score, solved, lost, ...(lost ? { word: secret.word } : {}) };
+    return { score, solved, lost };
   }
   if (game === 'memory') {
     // Cards turn one at a time: the first shows its symbol, the second resolves the pair.

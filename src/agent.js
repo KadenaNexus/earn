@@ -64,6 +64,8 @@ export function buildReceipt({ submission, campaign, recipient, model, decision,
 export function proofHash(proof) {
  return createHash('sha256').update(JSON.stringify(Object.keys(proof || {}).sort().map(k => [k, proof[k]]))).digest('hex');
 }
+// Player text is shown to the model with angle brackets escaped, so it can never close or forge a tag.
+export const asData = text => String(text ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const normalize = text => String(text || '').toLowerCase().replace(/\s+/g, ' ').trim();
 
 // Game wins: the server already checked the puzzle. The agent judges whether
@@ -87,11 +89,11 @@ Rules:
  const user = `<round>
 Game round: ${campaign.title}
 Reward: ${campaign.reward_kda} KDA
-Server result: ${String(submission.proof_json?.result || '').replace(/<\/?(play|round)\b[^>]*>/gi, '')}
+Server result: ${asData(submission.proof_json?.result || '')}
 </round>
 
 <play>
-${String(play).replace(/<\/?(play|round)\b[^>]*>/gi, '')}
+${asData(play)}
 </play>
 
 Call record_review with your decision.`;
@@ -112,7 +114,7 @@ Rules:
 - Confidence is your honest probability that your decision is right. Do not inflate it.`;
  const fields = campaign.proof_schema.map(f => {
    const value = submission.proof_json?.[f.key] ?? '';
-   return `<field label=${JSON.stringify(f.label)} type="${f.type}">${String(value).replace(/<\/?(submission|field)\b[^>]*>/gi, '')}</field>`;
+   return `<field label=${JSON.stringify(f.label)} type="${f.type}">${asData(value)}</field>`;
  }).join('\n');
  const user = `<task>
 Title: ${campaign.title}

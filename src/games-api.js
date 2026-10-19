@@ -190,7 +190,8 @@ export function gameRoutes(app, db, chain, c, { sendMail } = {}) {
       requireValue(INTERACTIVE.includes(s.game), 400, 'This game has no moves');
       requireValue(s.status === 'playing', 409, 'This round is already finished');
       if (s.late) return { ...(await missed(tx, s, null, 'Time ran out for this puzzle.', 'expired')), over: true };
-      const r = moveRound(s.game, s.secret, s.state, move);
+      // Timing for bot checks comes from the server clock, never from the browser.
+      const r = moveRound(s.game, s.secret, s.state, { ...move, t: Date.now() - Date.parse(s.started_at) });
       requireValue(!r.error, 400, r.error);
       await tx.query('UPDATE game_sessions SET secret=$2,state=$3 WHERE id=$1', [sid, JSON.stringify(s.secret), JSON.stringify(s.state)]);
       if (r.lost) return { ...r, ...(await missed(tx, s, null, s.game === 'mines' ? 'You hit a mine.' : 'Out of guesses.')), over: true };
