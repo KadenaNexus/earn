@@ -52,5 +52,5 @@ export function authRoutes(app,db,c) {
    res.clearCookie('ke_session',cookieOptions(c)).json({ok:true});
  });
 }
-export const authenticated=(req,res,next)=>{requireValue(req.user,401,'Connect your Ecko wallet first');next();};
+export const authenticated=(req,res,next)=>{requireValue(req.user,401,'Connect your wallet first');next();};
 export const admin=c=>(req,res,next)=>{requireValue(req.user?.kadena_account===c.admin,403,'Owner access required');next();};

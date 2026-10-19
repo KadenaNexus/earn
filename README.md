@@ -1,6 +1,6 @@
 # Kadena Earn
 
-Kadena Earn connects funded community tasks to KDA rewards. Contributors sign in with desktop Ecko, submit text and evidence links, and follow review and payment status. The owner creates campaigns, funds their escrow, reviews submissions, sends payouts and controls the emergency pause.
+Kadena Earn connects funded community tasks to KDA rewards. Contributors sign in with Linx or the Ecko app on a phone (WalletConnect) or the Ecko extension on a computer, submit text and evidence links, and follow review and payment status. The owner creates campaigns, funds their escrow, reviews submissions, sends payouts and controls the emergency pause.
 
 Completed work, the all-time leaderboard, payout feed and statistics come from confirmed payments. Screenshot evidence uses links. Wallet access currently supports single-key `k:` accounts on desktop.
 
@@ -126,3 +126,7 @@ Production chain writes are disabled by default. The operator enables owner setu
 The operator runs `npm run activate:contract` after both transactions confirm. It checks native confirmations, deployed module hash, owner/operations guards, sponsor and remaining operations gas before configuring the installed module and enabling campaign writes. Restart only the Earn web process afterward. Changing the owner setting does not transfer an existing contract's governance.
 
 `npm run prepare:contract` prepares the unsigned installation and exact source; it does not sign or broadcast. Never commit `.env`, operations keys, private signing material or database backups.
+
+## Wallets
+
+Sign-in and owner signatures work with Linx or the Ecko app over WalletConnect (`public/walletconnect.js`, the same code and pinned 2.20.3 build as Kadena Garden), or the Ecko browser extension (`public/wallet.js`). `public/wallets.js` asks which to use when the extension is present and goes straight to the phone wallet when it is not. The WalletConnect and QR libraries are served from `public/vendor`, rebuilt reproducibly with `scripts/build-vendor.sh` (checksums in `SHA256SUMS`, checked by the tests). The page's Content-Security-Policy allows the WalletConnect relay and nothing else outside the site.
