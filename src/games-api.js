@@ -2,7 +2,7 @@
 // through the same escrow reservation, AI review and payout as any task.
 //
 // What stops a prize pool being farmed (in order):
-//  1. Confirmed email, one inbox per wallet (normalized, disposable domains refused).
+//  1. Optional (GAMES_REQUIRE_EMAIL): confirmed email, one inbox per wallet (normalized, disposable domains refused).
 //  2. One win per wallet per game per 24 hours, a few attempts per round,
 //     one reward per wallet per round (escrow and database both enforce it).
 //  3. Puzzles are generated and checked on the server; answers never reach the
@@ -62,7 +62,7 @@ export function gameRoutes(app, db, chain, c, { sendMail } = {}) {
       .map(({ kadena_account, ...r }) => ({ ...r, who: `${kadena_account.slice(0, 10)}…${kadena_account.slice(-6)}` }));
     res.json({
       games: GAME_KINDS.map(k => ({ id: k, ...GAMES[k] })), rounds: rows.map(roundView), stats: paid, recent,
-      rules: { email_required: true, email_ready: !!mailer, writes: c.writes, wins_per_day: c.games.winsPerDay, attempts: c.games.attempts, ai_max_reward_kda: c.games.maxReward },
+      rules: { email_required: !!c.games.requireEmail, email_ready: !!mailer, writes: c.writes, wins_per_day: c.games.winsPerDay, attempts: c.games.attempts, ai_max_reward_kda: c.games.maxReward },
     });
   });
 
@@ -132,7 +132,7 @@ export function gameRoutes(app, db, chain, c, { sendMail } = {}) {
     res.json(await db.tx(async tx => {
       await assertRunning(tx);
       const me = (await tx.query('SELECT email_verified_at FROM users WHERE id=$1', [req.user.id])).rows[0];
-      requireValue(me.email_verified_at, 403, 'Confirm your email to play for KDA');
+      requireValue(!c.games.requireEmail || me.email_verified_at, 403, 'Confirm your email to play for KDA');
       const row = (await tx.query('SELECT * FROM task_campaigns WHERE id=$1 FOR UPDATE', [cid])).rows[0];
       requireValue(row?.game, 404, 'Game round not found');
       requireValue(row.status === 'open' && Date.parse(row.deadline) > Date.now() && !row.hidden, 409, 'This round is closed');

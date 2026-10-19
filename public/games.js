@@ -66,7 +66,7 @@ function playButton(r) {
   const rules = state.data.rules, mine = myRound(r.id);
   if (!rules.writes) return '<button class="btn" disabled>Opens soon</button>';
   if (!state.user) return `<button class="btn" data-connect>Connect wallet to play</button>`;
-  if (!state.me.email_verified) return `<button class="btn" data-email>Confirm email to play</button>`;
+  if (rules.email_required && !state.me.email_verified) return `<button class="btn" data-email>Confirm email to play</button>`;
   if (mine?.submission_id && mine.status !== 'reservation_failed') {
     if (mine.status === 'paid') return `<span class="badge ok">Won · paid</span>${mine.tx ? `<span class="state">${txLink(mine.tx)}</span>` : ''}`;
     if (mine.status === 'rejected') return '<span class="badge warn">Not approved</span>';
@@ -85,7 +85,7 @@ function renderLobby() {
   $('#gWins').textContent = fmt(d.stats.wins); $('#gKda').textContent = fmt(d.stats.kda);
   $('#gOpen').textContent = fmt(d.rounds.reduce((s, r) => s + Number(r.reward) * r.left, 0));
   $('#gFeed').innerHTML = d.recent.length ? d.recent.map(p => `<li><span class="who">${esc(p.who)}</span><b class="kda">${fmt(p.reward)}</b><span class="what">Won ${esc(d.games.find(g => g.id === p.game)?.name || 'a game')}</span><span class="tx">${p.tx ? `<a href="/transactions/${esc(p.tx)}?chain=1" target="_blank" rel="noopener noreferrer">${esc(short(p.tx))}</a>` : ''}</span>${p.ai ? `<a class="badge ai feed-ai" href="/ai-receipts/${esc(p.receipt)}">${ROBOT} Reviewed &amp; paid by AI agent</a>` : ''}</li>`).join('') : '<li class="empty">No wins paid yet. Be the first.</li>';
-  $('#rulesLine').textContent = `One win per game per day · ${rules.attempts} tries per round · confirmed email needed`;
+  $('#rulesLine').textContent = `One win per game per day · ${rules.attempts} tries per round${rules.email_required ? ' · confirmed email needed' : ''}`;
   renderEmail(); renderOwner();
   $('#rounds').innerHTML = d.rounds.length ? d.rounds.map(r => `<article class="game-card">
       <div class="gc-top"><span class="gc-icon">${ICON[r.game]}</span><div><h3>${esc(r.game_name)}</h3><span class="kda">${fmt(r.reward)}</span></div></div>
@@ -105,7 +105,7 @@ function renderLobby() {
 }
 function renderEmail() {
   const card = $('#emailCard'), me = state.me;
-  card.hidden = !state.user || me?.email_verified;
+  card.hidden = !state.user || me?.email_verified || !state.data.rules.email_required;
   if (card.hidden) return;
   if (!state.data.rules.email_ready) { card.innerHTML = '<h3>Email confirmation opens soon</h3><p>Paid rounds need a confirmed email. This is being switched on; practice is open now.</p>'; return; }
   card.innerHTML = `<h3>Confirm your email to play for KDA</h3>
