@@ -5,11 +5,14 @@ import { PhoneWallet } from './walletconnect.js';
 
 const KEY = 'ke-wallet';
 export const hasEcko = () => !!window.kadena?.isKadena;
+// Inside Linx's own browser (or another wallet app's), the injected wallet is the phone wallet itself.
+export const inWalletApp = () => hasEcko() && (/linx/i.test(navigator.userAgent) || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent));
 const remember = kind => { try { localStorage.setItem(KEY, kind); } catch { /* private mode */ } };
 const remembered = () => { try { return localStorage.getItem(KEY); } catch { return null; } };
 
 /** The wallet the user signed in with last, for later signatures (owner funding, pause). */
 export function restoreWallet() {
+  if (inWalletApp()) return new EckoWallet();
   if (remembered() === 'phone' || (!hasEcko() && PhoneWallet.hasSession())) return new PhoneWallet();
   return new EckoWallet();
 }
@@ -17,6 +20,7 @@ export function forgetWallet() { try { localStorage.removeItem(KEY); } catch { /
 
 /** Asks which wallet to use. Phones without the Ecko extension go straight to Linx. */
 export function chooseWallet() {
+  if (inWalletApp()) { remember('ecko'); return Promise.resolve(new EckoWallet()); }
   if (!hasEcko()) { remember('phone'); return Promise.resolve(new PhoneWallet()); }
   return new Promise((resolve, reject) => {
     const box = document.createElement('div');

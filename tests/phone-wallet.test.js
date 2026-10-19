@@ -36,3 +36,23 @@ test('Pages allow the WalletConnect relay and load the library from this site on
    assert.equal(createHash('sha256').update(readFileSync(new URL(`../public/vendor/${file}`, import.meta.url))).digest('hex'), hash, file);
  }
 });
+
+test('Wallet inside Linx: kda_connect account is used and any quicksign answer shape is accepted', async () => {
+ const { EckoWallet } = await import('../public/wallet.js');
+ const { testKey } = await import('./helpers.js');
+ const { command, sign } = await import('../src/pact.js');
+ const { testConfig } = await import('./helpers.js');
+ const key = testKey(), c = testConfig(key, testKey());
+ const tx = command(c, '(+ 1 2)', {}, key.publicKey, []);
+ const signed = sign(tx, key.seed);
+ const calls = [];
+ const linx = { isKadena: true, request: async r => { calls.push(r.method);
+   if (r.method === 'kda_connect') return { status: 'success', account: { account: key.account, publicKey: key.publicKey } };
+   return { status: 'success', quickSignData: [{ commandSigData: { cmd: tx.cmd, sigs: [{ pubKey: key.publicKey, sig: signed.sigs[0].sig }] } }] }; } };
+ const w = new EckoWallet(linx);
+ assert.equal(await w.connect('development'), key.account);
+ assert.deepEqual(calls, ['kda_connect'], 'no kda_checkStatus needed when kda_connect returns the account');
+ assert.equal((await w.sign(tx)).sigs[0].sig, signed.sigs[0].sig);
+ const tampered = { isKadena: true, request: async () => ({ status: 'success', responses: [{ commandSigData: { cmd: '{"other":1}', sigs: [{ pubKey: key.publicKey, sig: signed.sigs[0].sig }] } }] }) };
+ await assert.rejects(new EckoWallet(tampered).sign(tx), /expected transaction/);
+});
