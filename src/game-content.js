@@ -20,7 +20,7 @@ export const QUIZ = [
   { q: 'In what currency is gas paid on Kadena?', o: ['ETH', 'USDT', 'KDA', 'Any token'], a: 2 },
   { q: 'What does "braided" mean in Kadena\'s Chainweb?', o: ['Each chain\'s blocks reference blocks from its peer chains', 'Chains take turns being online', 'Blocks are compressed', 'Two networks share miners'], a: 0 },
   { q: 'Which standard interface does the KDA coin contract implement?', o: ['ERC-20', 'fungible-v2', 'SPL', 'BEP-2'], a: 1 },
-  { q: 'Which post-quantum signature scheme is being added to Kadena for new account types?', o: ['RSA-4096', 'SLH-DSA (SPHINCS+)', 'ECDSA', 'BLS'], a: 1 },
+  { q: 'Which post-quantum signature scheme is Kadena\'s community working to add for new account types?', o: ['RSA-4096', 'SLH-DSA (SPHINCS+)', 'ECDSA', 'BLS'], a: 1 },
   { q: 'In Pact, where does a contract keep its data?', o: ['In tables defined in the module', 'In the miner\'s wallet', 'In browser cookies', 'Off chain only'], a: 0 },
   { q: 'What does with-capability do in Pact?', o: ['Grants a capability only for the code inside it', 'Deletes a capability', 'Upgrades the contract', 'Sends KDA to the miner'], a: 0 },
   { q: 'Who keeps the Kadena node software going after Kadena LLC closed?', o: ['Nobody', 'Community developers (Kadena Community Edition)', 'A single exchange', 'Ethereum validators'], a: 1 },
@@ -47,7 +47,7 @@ export const RIDDLES = [
   { q: 'I have to be broken before you can use me.', answers: ['egg'] },
   { q: 'I\'m tall when I\'m young and short when I\'m old.', answers: ['candle'] },
   { q: 'I go up but never come down.', answers: ['age', 'your age'] },
-  { q: 'I have many teeth but I can\'t bite.', answers: ['comb', 'zipper', 'saw'] },
+  { q: 'I have many teeth but I can\'t bite.', answers: ['comb', 'zipper', 'zip', 'saw'] },
   { q: 'You can catch me but you can\'t throw me.', answers: ['cold', 'a cold'] },
   { q: 'I get wetter the more I dry.', answers: ['towel'] },
   { q: 'I have a neck but no head.', answers: ['bottle', 'shirt'] },
@@ -71,7 +71,7 @@ export const RIDDLES = [
 
 // ---------- Added Oct 19, 2026: more quiz questions ----------
 QUIZ.push(
-  { q: 'In a cross-chain transfer, what does SPV stand for?', o: ['Simple Payment Verification', 'Secure Pact Vault', 'Single Proof Validator', 'Signed Payment Voucher'], a: 0 },
+  { q: 'In a cross-chain transfer, what does SPV stand for?', o: ['Simplified Payment Verification', 'Secure Pact Vault', 'Single Proof Validator', 'Signed Payment Voucher'], a: 0 },
   { q: 'What is the network ID of Kadena mainnet?', o: ['kadena-1', 'mainnet01', 'chainweb-main', 'kda'], a: 1 },
   { q: 'What does a defpact define in Pact?', o: ['A table', 'A multi-step transaction that can continue later, even on another chain', 'A keyset', 'A token price'], a: 1 },
   { q: 'What is a keyset made of?', o: ['A list of public keys and a rule for how many must sign', 'A password and an email', 'One private key', 'A list of chain IDs'], a: 0 },
@@ -100,7 +100,7 @@ QUIZ.push(
 
 // ---------- Added Oct 19, 2026: more riddles ----------
 RIDDLES.push(
-  { q: 'You can hold me in your right hand but never in your left.', answers: ['left hand', 'your left hand', 'left elbow', 'elbow'] },
+  { q: 'You can hold me in your right hand but never in your left.', answers: ['left hand', 'your left hand', 'left elbow', 'your left elbow'] },
   { q: 'The more you take away from me, the bigger I get.', answers: ['hole'] },
   { q: 'I go up and down but never move.', answers: ['stairs', 'staircase', 'stair'] },
   { q: 'I have cities but no houses, forests but no trees, and water but no fish.', answers: ['map'] },
@@ -112,11 +112,11 @@ RIDDLES.push(
   { q: 'I run all the way around a yard without moving.', answers: ['fence'] },
   { q: 'Say my name and you break me.', answers: ['silence'] },
   { q: 'You can keep me even after you give me to someone.', answers: ['word', 'promise', 'your word'] },
-  { q: 'I have thirteen hearts but no other organs.', answers: ['deck of cards', 'deck', 'cards', 'card deck'] },
+  { q: 'I have thirteen hearts but no other organs.', answers: ['deck of cards', 'deck', 'cards', 'card deck', 'pack of cards', 'pack'] },
   { q: 'I am light as a feather, yet the strongest person cannot hold me for long.', answers: ['breath'] },
   { q: 'I have branches but no leaves, no trunk and no fruit.', answers: ['bank'] },
   { q: 'This invention lets you look right through a wall.', answers: ['window'] },
-  { q: 'I start with T, end with T, and have T in me.', answers: ['teapot'] },
+  { q: 'I start with T, end with T, and have T in me.', answers: ['teapot', 'tea pot', 'teakettle'] },
   { q: 'Twelve or twenty-four words that bring a lost wallet back to life.', answers: ['seed phrase', 'recovery phrase', 'mnemonic', 'seed'] },
   { q: 'I do the work, guess after guess, and add new blocks to the chain.', answers: ['miner', 'mining rig', 'rig', 'asic'] },
   { q: 'I hold the keys to your coins, but never the coins themselves.', answers: ['wallet', 'crypto wallet'] },
@@ -132,7 +132,7 @@ export const WORDS = ['block', 'chain', 'miner', 'token', 'nonce', 'proof', 'bra
   'apple', 'beach', 'brain', 'bread', 'chair', 'cloud', 'dance', 'dream', 'earth', 'field', 'flame', 'fruit', 'ghost', 'grape', 'green', 'heart', 'horse', 'house', 'juice',
   'knife', 'laugh', 'light', 'lemon', 'magic', 'month', 'mouth', 'music', 'night', 'ocean', 'paint', 'party', 'piano', 'pilot', 'plane', 'plant', 'power', 'queen', 'river',
   'robot', 'round', 'salad', 'sheep', 'shirt', 'smile', 'snake', 'sound', 'space', 'spoon', 'sport', 'storm', 'sugar', 'table', 'tiger', 'toast', 'tower', 'train', 'water',
-  'whale', 'world', 'write', 'youth', 'zebra', 'camel', 'candy', 'clock', 'crown', 'desert', 'eagle', 'falcon', 'honey', 'island', 'medal', 'olive', 'pearl', 'sands', 'stars',
+  'whale', 'world', 'write', 'youth', 'zebra', 'camel', 'candy', 'clock', 'crown', 'eagle', 'honey', 'medal', 'olive', 'pearl', 'sands', 'stars',
 ].filter(w => /^[a-z]{5}$/.test(w));
 
 // ---------- Spot the Pact bug ----------

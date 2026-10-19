@@ -256,3 +256,43 @@ test('New games: Word, Memory, Minesweeper and Pact Bug win through the server a
    assert.equal(Number(paid), 3, 'Word, Minesweeper and Pact Bug wins were paid by the AI agent');
  } finally { await t.close(); }
 });
+
+test('Pre-launch fixes: daily cap at finish, renewed slot for later tries, failed reservation does not use a try', async () => {
+ const t = await setup('ke_games_fixes', false);
+ try {
+   const solve = async (u, cid) => {
+     const s = (await u.call('/games/' + cid + '/play', {})).data;
+     await t.db.query("UPDATE game_sessions SET started_at=now()-interval '1 minute' WHERE id=$1", [s.id]);
+     const { secret } = await t.secret(s.id);
+     return { s, finish: () => u.call('/games/sessions/' + s.id + '/finish', { play: { answers: secret.ids.map(id => RIDDLES[id].answers[0]) } }) };
+   };
+   // Two rounds started before either is finished: only one can be won today.
+   const a = await t.round('riddle'), b = await t.round('riddle');
+   const u = await client(t.base, testKey());
+   const ra = await solve(u, a), rb = await solve(u, b);
+   assert.equal((await ra.finish()).data.solved, true);
+   const second = (await rb.finish()).data;
+   assert.equal(second.solved, false); assert.match(second.message, /today/);
+   // A later try extends the held slot so it gets its full time.
+   const l = await t.round('logic'); const p = await client(t.base, testKey());
+   const s1 = (await p.call('/games/' + l + '/play', {})).data;
+   await p.call('/games/sessions/' + s1.id + '/finish', { play: { grid: Array(36).fill(1), entries: 1 } });
+   await t.db.query("UPDATE task_starts SET expires_at=now()+interval '2 minutes' WHERE campaign_id=$1", [l]);
+   const s2 = (await p.call('/games/' + l + '/play', {})).data;
+   assert.ok(Date.parse(s2.expires_at) - Date.now() > 15 * 60000, 'second try has close to the full 20 minutes');
+   // A win whose escrow reservation failed does not count as a used try.
+   const r = await t.round('riddle'); const q = await client(t.base, testKey());
+   const w = await solve(q, r); const won = (await w.finish()).data; assert.equal(won.solved, true);
+   await t.db.query("UPDATE submissions SET status='reservation_failed' WHERE id=$1", [won.submission_id]);
+   const again = await q.call('/games/' + r + '/play', {});
+   assert.equal(again.status, 200, JSON.stringify(again.data)); assert.equal(again.data.attempts_left, 2);
+ } finally { await t.close(); }
+});
+
+test('Riddle answers: lists of guesses and negations do not count; spacing is ignored', () => {
+ assert.equal(answerMatches('keyboard clock egg towel candle', ['keyboard']), false);
+ assert.equal(answerMatches('not a cold', ['cold']), false);
+ assert.equal(answerMatches('key board', ['keyboard']), true);
+ assert.equal(answerMatches('it is a candle', ['candle']), true);
+ assert.equal(answerMatches('the deck of cards', ['deck of cards']), true);
+});
