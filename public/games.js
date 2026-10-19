@@ -1,7 +1,7 @@
 // Kadena Nexus Games page. Paid rounds are generated and checked by the
 // server; practice rounds run here with the same puzzle code.
 import { chooseWallet, restoreWallet, forgetWallet } from './wallets.js';
-import { setupAmbience } from './ambience.js';
+import { setupAmbience } from './ambience.js?v=20261019s';
 import { tilesGenerate, tilesSolved, tileNeighbors, logicGenerate, logicCheck, memoryGenerate, memoryFlip, MINES, minesPlace, minesReveal } from './games-core.js';
 
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];

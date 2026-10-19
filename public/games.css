@@ -129,3 +129,12 @@
 /* Win shower */
 .g-burst{position:fixed;z-index:200;pointer-events:none;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:var(--orange);color:var(--orange-ink);font:800 15px/1 var(--display);box-shadow:inset 0 -3px 0 rgba(0,0,0,.18)}
 @media (prefers-reduced-motion:reduce){.g-sky{display:none}}
+/* Sound menu */
+.sound-menu{position:absolute;right:0;top:calc(100% + 8px);z-index:45;min-width:230px;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.14);padding:6px}
+.sound-menu[hidden]{display:none}
+.sound-menu p{margin:6px 10px 4px;font-size:12px;font-weight:600;color:var(--muted)}
+.sound-menu button{display:grid;gap:1px;width:100%;text-align:left;background:none;border:0;border-radius:8px;padding:9px 10px 9px 30px;position:relative;color:var(--ink)}
+.sound-menu button b{font-size:14px;font-weight:600}
+.sound-menu button span{font-size:12px;color:var(--muted)}
+.sound-menu button:hover,.sound-menu button:focus-visible{background:var(--surface-2)}
+.sound-menu button[aria-checked="true"]::before{content:"✓";position:absolute;left:10px;top:9px;color:var(--teal-text);font-weight:700}
