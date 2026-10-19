@@ -29,6 +29,7 @@ test('Pages allow the WalletConnect relay and load the library from this site on
    const csp = res.headers.get('content-security-policy');
    assert.match(csp, /connect-src 'self' wss:\/\/relay\.walletconnect\.org/);
    assert.match(csp, /script-src 'self'(;|$)/, 'no third-party scripts');
+   for (const f of ['/games.html', '/walletconnect.js', '/wallets.js', '/games.css']) assert.equal((await fetch(`http://127.0.0.1:${server.address().port}${f}`)).headers.get('cache-control'), 'no-cache', f);
  } finally { server.close(); }
  // The vendored bundle matches its recorded checksum (same pinned build as Kadena Garden).
  for (const line of readFileSync(new URL('../public/vendor/SHA256SUMS', import.meta.url), 'utf8').trim().split('\n')) {

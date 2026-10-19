@@ -43,7 +43,10 @@ export function createApp(db,chain,c,worker=new Worker(db,chain,c)) {
  // Wallet extensions (Ecko) show the site icon in their own popup, a different origin. Helmet's
  // Cross-Origin-Resource-Policy: same-origin blocks that, so allow cross-origin loads for icon files only.
  app.use(['/favicon.ico','/favicon.svg','/nexus-mark.png','/apple-touch-icon.png'],(req,res,next)=>{res.setHeader('Cross-Origin-Resource-Policy','cross-origin');next();});
- app.use(express.static(fileURLToPath(new URL('../public',import.meta.url)),{maxAge:c.production?'1h':0}));
+ // Pages and scripts are revalidated on every load (a cheap 304 when unchanged), so a deploy
+ // reaches phones at once; script modules import each other without version tags. Images,
+ // fonts and the pinned vendor bundle keep the 1-hour cache.
+ app.use(express.static(fileURLToPath(new URL('../public',import.meta.url)),{maxAge:c.production?'1h':0,setHeaders:(res,file)=>{if(/\.(html|js|css)$/.test(file)&&!/[\\/]vendor[\\/]/.test(file))res.setHeader('Cache-Control','no-cache');}}));
  app.use((error,req,res,next)=>{
    const status=error.name==='ZodError'?400:error.status||500;
    if(status>=500)console.error(JSON.stringify({event:'request_error',method:req.method,path:req.path,error:error.message}));
