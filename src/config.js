@@ -28,8 +28,10 @@ export function config(env = process.env) {
     },
     // Kadena Nexus Games: their own AI payout limits, separate from tasks.
     games: {
-      maxReward: env.GAMES_MAX_REWARD_KDA || '5', dailyKda: env.GAMES_DAILY_KDA || '50',
+      maxReward: env.GAMES_MAX_REWARD_KDA || '20', dailyKda: env.GAMES_DAILY_KDA || '200',
       winsPerDay: Number(env.GAMES_WINS_PER_WALLET_PER_DAY || 1),
+      // Wins per wallet per day across all games, so one player cannot sweep every round.
+      winsPerDayTotal: Number(env.GAMES_TOTAL_WINS_PER_WALLET_PER_DAY || 3),
       // Off by default: the daily AI games budget caps the loss. Turn on if one person farms with many wallets.
       requireEmail: env.GAMES_REQUIRE_EMAIL === 'true', attempts: Number(env.GAMES_ATTEMPTS_PER_ROUND || 3),
     },
@@ -43,6 +45,7 @@ export function config(env = process.env) {
   if (!/^\d+(\.\d{1,6})?$/.test(c.ai.maxReward) || !/^\d+(\.\d{1,6})?$/.test(c.ai.dailyKda)) throw new Error('AI review KDA limits must be plain decimals');
   if (!/^\d+(\.\d{1,6})?$/.test(c.games.maxReward) || !/^\d+(\.\d{1,6})?$/.test(c.games.dailyKda)) throw new Error('Game KDA limits must be plain decimals');
   if (!Number.isInteger(c.games.winsPerDay) || c.games.winsPerDay < 1 || c.games.winsPerDay > 10) throw new Error('GAMES_WINS_PER_WALLET_PER_DAY must be 1–10');
+  if (!Number.isInteger(c.games.winsPerDayTotal) || c.games.winsPerDayTotal < 1 || c.games.winsPerDayTotal > 20) throw new Error('GAMES_TOTAL_WINS_PER_WALLET_PER_DAY must be 1–20');
   if (!Number.isInteger(c.games.attempts) || c.games.attempts < 1 || c.games.attempts > 10) throw new Error('GAMES_ATTEMPTS_PER_ROUND must be 1–10');
   if (!Number.isInteger(c.ai.maxRounds) || c.ai.maxRounds < 1 || c.ai.maxRounds > 5) throw new Error('AI_REVIEW_MAX_ROUNDS must be 1–5');
   if (c.chain !== '1') throw new Error('Kadena Earn must use chain 1');

@@ -314,3 +314,43 @@ test('Security fixes: lost Word round keeps the word secret; player text cannot 
    assert.equal(last.over, true); assert.ok(!JSON.stringify(last).includes(secret.word));
  } finally { await t.close(); }
 });
+
+test('Launch limits: the AI pays game wins up to 20 KDA, and a wallet can win 3 games a day in total', async () => {
+ const t = await setup('ke_games_limits', false);
+ try {
+   assert.equal(t.c.games.maxReward, '20'); assert.equal(t.c.games.dailyKda, '200'); assert.equal(t.c.games.winsPerDayTotal, 3);
+   assert.equal((await t.owner.raw('/games')).data.rules.wins_per_day_total, 3);
+   const u = await client(t.base, testKey());
+   const start = async cid => { const s = (await u.call('/games/' + cid + '/play', {})).data; assert.ok(s.id, JSON.stringify(s));
+     await t.db.query("UPDATE game_sessions SET started_at=now()-interval '2 minutes' WHERE id=$1", [s.id]); return { s, secret: (await t.secret(s.id)).secret }; };
+   const finish = (s, play) => u.call('/games/sessions/' + s.id + '/finish', { play });
+   // Win 1: a 20 KDA Pact Bug round is paid by the AI, not left for the owner.
+   const bug = await t.round('pactbug', { reward_kda: '20' });
+   const b = await start(bug);
+   const bw = (await finish(b.s, { choice: b.secret.answer, written: 'The guard is never checked, so a stranger can move funds that are not theirs.' })).data;
+   assert.equal(bw.solved, true);
+   await t.ticks(5);
+   const paid = (await t.db.query('SELECT s.status,p.amount_kda FROM submissions s LEFT JOIN payouts p ON p.submission_id=s.id WHERE s.id=$1', [bw.submission_id])).rows[0];
+   assert.equal(paid.status, 'paid'); assert.equal(Number(paid.amount_kda), 20);
+   // Wins 2 and 3.
+   const r = await start(await t.round('riddle'));
+   assert.equal((await finish(r.s, { answers: r.secret.ids.map(id => RIDDLES[id].answers[0]) })).data.solved, true);
+   const q = await start(await t.round('quiz'));
+   assert.equal((await finish(q.s, { choices: q.secret.answers, written: 'Gas stations pay fees so new users can start without KDA.' })).data.solved, true);
+   assert.equal((await u.call('/me/games')).data.wins_today_total, 3);
+   // A fourth game cannot be started, and a round started before the third win cannot pay at finish.
+   const blocked = await u.call('/games/' + (await t.round('logic')) + '/play', {});
+   assert.equal(blocked.status, 409); assert.match(blocked.data.error, /3 games today/);
+   const v = await client(t.base, testKey());
+   const ra = await t.round('riddle'), wa = await t.round('word'), qa = await t.round('quiz'), la = await t.round('logic');
+   const open = [];
+   for (const cid of [ra, qa, la, wa]) { const s = (await v.call('/games/' + cid + '/play', {})).data; await t.db.query("UPDATE game_sessions SET started_at=now()-interval '3 minutes' WHERE id=$1", [s.id]); open.push({ s, secret: (await t.secret(s.id)).secret }); }
+   const vf = (o, play) => v.call('/games/sessions/' + o.s.id + '/finish', { play });
+   assert.equal((await vf(open[0], { answers: open[0].secret.ids.map(id => RIDDLES[id].answers[0]) })).data.solved, true);
+   assert.equal((await vf(open[1], { choices: open[1].secret.answers, written: 'Gas stations pay fees so new users can start without KDA.' })).data.solved, true);
+   assert.equal((await vf(open[2], { grid: open[2].secret.solution, entries: 30 })).data.solved, true);
+   await v.call('/games/sessions/' + open[3].s.id + '/move', { move: { guess: open[3].secret.word, t: 9000 } });
+   const fourth = (await vf(open[3], {})).data;
+   assert.equal(fourth.solved, false); assert.match(fourth.message, /3 games today/);
+ } finally { await t.close(); }
+});
