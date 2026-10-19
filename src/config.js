@@ -26,12 +26,22 @@ export function config(env = process.env) {
       minConfidence: Number(env.AI_REVIEW_MIN_CONFIDENCE || 0.85), maxRounds: Number(env.AI_REVIEW_MAX_ROUNDS || 2),
       perTick: Number(env.AI_REVIEW_PER_TICK || 3),
     },
+    // Kadena Nexus Games: their own AI payout limits, separate from tasks.
+    games: {
+      maxReward: env.GAMES_MAX_REWARD_KDA || '5', dailyKda: env.GAMES_DAILY_KDA || '50',
+      winsPerDay: Number(env.GAMES_WINS_PER_WALLET_PER_DAY || 1), attempts: Number(env.GAMES_ATTEMPTS_PER_ROUND || 3),
+    },
+    // Email confirmation (required to play games for KDA), sent with Resend.
+    mail: { resendKey: env.RESEND_API_KEY || '', from: env.EMAIL_FROM || 'Kadena Earn <alerts@kadena.ws>' },
   };
   accountSchema.parse(c.admin);
   if (!c.database) throw new Error('DATABASE_URL is required');
   if (c.module && !/^(?:[a-zA-Z][\w-]*\.)?[a-zA-Z][\w-]*$/.test(c.module)) throw new Error('Invalid PACT_MODULE');
   if (!(c.ai.minConfidence >= 0.5 && c.ai.minConfidence <= 1)) throw new Error('AI_REVIEW_MIN_CONFIDENCE must be between 0.5 and 1');
   if (!/^\d+(\.\d{1,6})?$/.test(c.ai.maxReward) || !/^\d+(\.\d{1,6})?$/.test(c.ai.dailyKda)) throw new Error('AI review KDA limits must be plain decimals');
+  if (!/^\d+(\.\d{1,6})?$/.test(c.games.maxReward) || !/^\d+(\.\d{1,6})?$/.test(c.games.dailyKda)) throw new Error('Game KDA limits must be plain decimals');
+  if (!Number.isInteger(c.games.winsPerDay) || c.games.winsPerDay < 1 || c.games.winsPerDay > 10) throw new Error('GAMES_WINS_PER_WALLET_PER_DAY must be 1–10');
+  if (!Number.isInteger(c.games.attempts) || c.games.attempts < 1 || c.games.attempts > 10) throw new Error('GAMES_ATTEMPTS_PER_ROUND must be 1–10');
   if (!Number.isInteger(c.ai.maxRounds) || c.ai.maxRounds < 1 || c.ai.maxRounds > 5) throw new Error('AI_REVIEW_MAX_ROUNDS must be 1–5');
   if (c.chain !== '1') throw new Error('Kadena Earn must use chain 1');
   if (!Number.isInteger(c.depth) || c.depth < 1) throw new Error('Invalid confirmation depth');

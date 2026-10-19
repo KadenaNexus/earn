@@ -11,6 +11,7 @@ import { ReviewAgent } from './agent.js';
 import { authRoutes } from './auth.js';
 import { apiRoutes } from './api.js';
 import { setupRoutes } from './setup.js';
+import { gameRoutes } from './games-api.js';
 import { requireValue } from './validation.js';
 
 export function createApp(db,chain,c,worker=new Worker(db,chain,c)) {
@@ -28,12 +29,13 @@ export function createApp(db,chain,c,worker=new Worker(db,chain,c)) {
    }next();
  });
  app.get('/healthz',async(req,res)=>{try{await db.query('SELECT 1');res.json({ok:true});}catch{res.status(503).json({ok:false});}});
- authRoutes(app,db,c);setupRoutes(app,db,chain,c,worker);apiRoutes(app,db,chain,c,worker);
+ authRoutes(app,db,c);setupRoutes(app,db,chain,c,worker);apiRoutes(app,db,chain,c,worker);gameRoutes(app,db,chain,c,{sendMail:c.sendMail});
  app.use('/api',(req,res)=>res.status(404).json({error:'Endpoint not found'}));
  app.get('/transactions/:key',(req,res)=>{
    requireValue(/^[A-Za-z0-9_-]{43}$/.test(req.params.key),400,'Invalid transaction request key');
    res.sendFile(fileURLToPath(new URL('../public/transaction.html',import.meta.url)));
  });
+ app.get('/games',(req,res)=>res.redirect(301,'/games.html'));
  app.get('/ai-receipts/:id',(req,res)=>{
    requireValue(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.id),400,'Invalid receipt id');
    res.sendFile(fileURLToPath(new URL('../public/ai-receipt.html',import.meta.url)));

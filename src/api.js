@@ -5,6 +5,7 @@ import { audit } from './db.js';
 import { command, signingRequest, quote, decimal, micros, verifySignature } from './pact.js';
 import { campaignSchema, campaignEditSchema, proofSignature, rewardSchema, maxTaskRewardKda, proofData, requireValue, HttpError } from './validation.js';
 import { enqueue, unwrap, syncCampaign, pauseState, queuePayout } from './jobs.js';
+import { GAME_PROOF_SCHEMA, gameSteps } from './games.js';
 
 const id = value => z.coerce.number().int().positive().parse(value);
 const short = account => `${account.slice(0,10)}…${account.slice(-6)}`;
@@ -16,9 +17,9 @@ export function taskView(c) {
    ends:Math.max(0,Math.ceil((Date.parse(c.deadline)-Date.now())/86400000)),deadline:c.deadline,featured:c.featured,ai:!!c.ai_review,
    steps:c.steps,proof:c.proof_schema.map(f=>f.label),proof_schema:c.proof_schema,status:c.status,
    escrow:snap?{funded:snap.funded,paid:snap.paid,refunded:snap.refunded,remaining:Number(snap.funded)-Number(snap.paid)-Number(snap.refunded),reserved:Number(snap.reward)*Number(snap['reserved-count']),checked_at:c.chain_checked_at}:null,
-   funding_tx:c.funding_tx,hidden:!!c.hidden};
+   funding_tx:c.funding_tx,hidden:!!c.hidden,game:c.game||null};
 }
-const campaignQuery=`SELECT c.*, (SELECT count(*) FROM submissions s WHERE s.campaign_id=c.id AND s.status IN ('reserving','in_review','changes_requested','approved','paid','payout_failed'))+
+export const campaignQuery=`SELECT c.*, (SELECT count(*) FROM submissions s WHERE s.campaign_id=c.id AND s.status IN ('reserving','in_review','changes_requested','approved','paid','payout_failed'))+
  (SELECT count(*) FROM task_starts t WHERE t.campaign_id=c.id AND t.state='started' AND t.expires_at>now()) AS occupied FROM task_campaigns c`;
 
 export function apiRoutes(app,db,chain,c,worker) {
@@ -41,7 +42,7 @@ export function apiRoutes(app,db,chain,c,worker) {
  app.get('/api/config',(req,res)=>res.json({network:c.network,chain:c.chain,admin_account:c.admin,writes_enabled:c.writes,task_reward_cap_kda:maxTaskRewardKda,campaign_pool_cap_kda:null,slot_hold_minutes:30,explorer:'/transactions/',ai_review_max_reward_kda:c.ai.maxReward}));
  app.get('/api/transactions/:key',async(req,res)=>{const key=z.string().regex(/^[A-Za-z0-9_-]{43}$/).parse(req.params.key);const result=await chain.poll(key);requireValue(result,404,'Transaction has not confirmed yet');res.json(result);});
  app.get('/api/tasks',async(req,res)=>{
-   const rows=(await db.query(`${campaignQuery} WHERE c.status='open' AND NOT c.hidden AND c.deadline>now() ORDER BY c.created_at DESC`)).rows;
+   const rows=(await db.query(`${campaignQuery} WHERE c.status='open' AND NOT c.hidden AND c.game IS NULL AND c.deadline>now() ORDER BY c.created_at DESC`)).rows;
    let list=rows.map(taskView);
    if(req.query.category)list=list.filter(t=>t.cat===req.query.category);
    if(req.query.q){const q=String(req.query.q).toLowerCase();list=list.filter(t=>(t.title+' '+t.sum+' '+t.sponsor).toLowerCase().includes(q));}
@@ -100,6 +101,7 @@ export function apiRoutes(app,db,chain,c,worker) {
      const row=(await tx.query('SELECT * FROM task_campaigns WHERE id=$1 FOR UPDATE',[cid])).rows[0];
      requireValue(row?.status==='open'&&Date.parse(row.deadline)>Date.now(),409,'Campaign is not accepting work');
      requireValue(!row.hidden,409,'This task is no longer accepting new contributors');
+     requireValue(!row.game,409,'Play this round from the Games page');
      const mine=(await tx.query('SELECT s.status FROM submissions s WHERE campaign_id=$1 AND user_id=$2',[cid,req.user.id])).rows[0];
      requireValue(!mine||mine.status==='reservation_failed',409,'You already submitted this task');
      const existing=(await tx.query('SELECT * FROM task_starts WHERE campaign_id=$1 AND user_id=$2',[cid,req.user.id])).rows[0];
@@ -116,6 +118,8 @@ export function apiRoutes(app,db,chain,c,worker) {
    res.json(await db.tx(async tx=>{
      await assertRunning(tx);
      const campaign=(await tx.query('SELECT * FROM task_campaigns WHERE id=$1 FOR UPDATE',[cid])).rows[0];requireValue(campaign,404,'Task not found');
+     // Game proof is written by the server when a round is won, never typed in.
+     requireValue(!campaign.game,409,'Game rounds are checked and submitted by the game itself');
      const input=proofData(campaign.proof_schema,req.body);
      const existing=(await tx.query('SELECT * FROM submissions WHERE campaign_id=$1 AND user_id=$2 FOR UPDATE',[cid,req.user.id])).rows[0];
      if(existing?.status==='changes_requested') {
@@ -193,6 +197,8 @@ export function apiRoutes(app,db,chain,c,worker) {
      const row=(await tx.query('SELECT * FROM task_campaigns WHERE id=$1 FOR UPDATE',[cid])).rows[0];
      requireValue(row,404,'Campaign not found');
      requireValue(['draft','funding','funding_failed','open'].includes(row.status),409,'This task has ended and can no longer be edited');
+     // A game round keeps its server-written proof fields and category.
+     if(row.game)Object.assign(input,{proof_schema:row.proof_schema,category:row.category,template:row.template});
      const fieldsChanged=proofSignature(row.proof_schema)!==proofSignature(input.proof_schema);
      if(fieldsChanged){
        const busy=Number((await tx.query(`SELECT ${inProgress} AS n FROM task_campaigns c WHERE c.id=$1`,[cid])).rows[0].n);
@@ -218,9 +224,12 @@ export function apiRoutes(app,db,chain,c,worker) {
  });
  app.post('/api/admin/campaigns',owner,async(req,res)=>{
    assertWrites();const input=campaignSchema.parse(req.body);
+   // Game rounds always use the game's own steps and server-written proof, and
+   // are reviewed and paid by the AI agent (within the game limits).
+   if(input.game)Object.assign(input,{category:'Games',template:'Game',steps:gameSteps(input.game),proof_schema:GAME_PROOF_SCHEMA,ai_review:true});
    res.json(await idempotent(req,async tx=>{
      await assertRunning(tx);const pactId=`campaign-${randomUUID()}`;
-     const row=(await tx.query(`INSERT INTO task_campaigns(pact_campaign_id,sponsor_name,sponsor_account,title,summary,category,template,steps,proof_schema,reward_kda,max_rewards,minutes_estimate,deadline,featured,ai_review,ai_criteria) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,[pactId,input.sponsor_name,c.admin,input.title,input.summary,input.category,input.template,JSON.stringify(input.steps),JSON.stringify(input.proof_schema),input.reward_kda,input.max_rewards,input.minutes_estimate,input.deadline,input.featured,input.ai_review,input.ai_criteria||null])).rows[0];
+     const row=(await tx.query(`INSERT INTO task_campaigns(pact_campaign_id,sponsor_name,sponsor_account,title,summary,category,template,steps,proof_schema,reward_kda,max_rewards,minutes_estimate,deadline,featured,ai_review,ai_criteria,game) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *`,[pactId,input.sponsor_name,c.admin,input.title,input.summary,input.category,input.template,JSON.stringify(input.steps),JSON.stringify(input.proof_schema),input.reward_kda,input.max_rewards,input.minutes_estimate,input.deadline,input.featured,input.ai_review,input.ai_criteria||null,input.game||null])).rows[0];
      await audit(tx,req.user.id,'create','campaign',row.id);return {campaign:taskView(row)};
    }));
  });
@@ -290,9 +299,10 @@ export function apiRoutes(app,db,chain,c,worker) {
  app.get('/api/admin/ai-review',owner,async(req,res)=>{
    const on=(await db.query("SELECT value FROM settings WHERE key='ai_review_enabled'")).rows[0]?.value===true;
    const day=(await db.query(`SELECT count(*) FILTER(WHERE applied='approved') approved,count(*) FILTER(WHERE applied='changes_requested') changes,count(*) FILTER(WHERE applied='escalated') escalated FROM ai_reviews WHERE created_at>now()-interval '24 hours'`)).rows[0];
-   const spent=(await db.query(`SELECT coalesce(sum(p.amount_kda),0) kda FROM payouts p JOIN submissions s ON s.id=p.submission_id WHERE s.ai_reviewed AND p.created_at>now()-interval '24 hours'`)).rows[0].kda;
+   const split=(await db.query(`SELECT coalesce(sum(p.amount_kda) FILTER(WHERE c.game IS NULL),0) tasks,coalesce(sum(p.amount_kda) FILTER(WHERE c.game IS NOT NULL),0) games FROM payouts p JOIN submissions s ON s.id=p.submission_id JOIN task_campaigns c ON c.id=s.campaign_id WHERE s.ai_reviewed AND p.created_at>now()-interval '24 hours'`)).rows[0];
+   const spent=split.tasks;
    const recent=(await db.query(`SELECT a.submission_id,a.decision,a.confidence,a.applied,a.skip_reason,a.reasons,a.created_at,c.title task FROM ai_reviews a JOIN submissions s ON s.id=a.submission_id JOIN task_campaigns c ON c.id=s.campaign_id ORDER BY a.id DESC LIMIT 50`)).rows;
-   res.json({enabled:on,configured:!!worker.agent,model:c.ai.model,max_reward_kda:c.ai.maxReward,daily_kda:c.ai.dailyKda,min_confidence:c.ai.minConfidence,spent_24h:spent,last_24h:day,last_run:worker.agent?.lastRun||null,last_error:worker.agent?.lastError||null,recent});
+   res.json({enabled:on,configured:!!worker.agent,model:c.ai.model,max_reward_kda:c.ai.maxReward,daily_kda:c.ai.dailyKda,min_confidence:c.ai.minConfidence,spent_24h:spent,games:{max_reward_kda:c.games.maxReward,daily_kda:c.games.dailyKda,spent_24h:split.games},last_24h:day,last_run:worker.agent?.lastRun||null,last_error:worker.agent?.lastError||null,recent});
  });
  app.post('/api/admin/ai-review',owner,async(req,res)=>{
    const {enabled}=z.object({enabled:z.boolean()}).strict().parse(req.body||{});

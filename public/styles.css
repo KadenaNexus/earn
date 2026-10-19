@@ -448,3 +448,13 @@ nav.bottom{display:none}
 .site-footer .wrap{flex-wrap:wrap}
 .nx-projects{display:flex;flex-wrap:wrap;justify-content:center;gap:6px 18px}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+/* Games link (a real page, so an <a> styled like the nav buttons) */
+nav.primary a.navlink{display:inline-flex;align-items:center;text-decoration:none;padding:8px 12px;border-radius:8px;color:var(--muted);font-weight:500;white-space:nowrap}
+nav.primary a.navlink[aria-current="page"]{color:var(--ink);background:var(--surface-2)}
+nav.primary a.navlink .new{margin-left:6px;font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--orange-text)}
+@media (max-width:860px){
+  nav.bottom{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:1fr}
+  nav.bottom a{display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0 10px;font-size:11px;color:var(--muted);text-decoration:none}
+  nav.bottom a[aria-current="page"]{color:var(--teal-text)}
+}
