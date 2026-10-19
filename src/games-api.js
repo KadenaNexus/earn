@@ -52,8 +52,8 @@ export function gameRoutes(app, db, chain, c, { sendMail } = {}) {
   // A win whose escrow reservation failed does not use up a try: the player may play again.
   const attemptsUsed = async (tx, cid, uid) => Number((await tx.query(`SELECT count(*) n FROM game_sessions g LEFT JOIN submissions s ON s.id=g.submission_id
     WHERE g.campaign_id=$1 AND g.user_id=$2 AND NOT (g.status='solved' AND s.status='reservation_failed')`, [cid, uid])).rows[0].n);
-  const winsToday = async (tx, uid, game) => Number((await tx.query(`SELECT count(*) n FROM submissions s JOIN task_campaigns c ON c.id=s.campaign_id
-    WHERE s.user_id=$1 AND c.game=$2 AND s.submitted_at>now()-interval '24 hours' AND s.status NOT IN ('rejected','reservation_failed')`, [uid, game])).rows[0].n);
+  const winsToday = async (tx, uid, game = null) => Number((await tx.query(`SELECT count(*) n FROM submissions s JOIN task_campaigns c ON c.id=s.campaign_id
+    WHERE s.user_id=$1 AND ($2::text IS NULL AND c.game IS NOT NULL OR c.game=$2) AND s.submitted_at>now()-interval '24 hours' AND s.status NOT IN ('rejected','reservation_failed')`, [uid, game])).rows[0].n);
 
   app.get('/api/games', async (req, res) => {
     const rows = (await db.query(`${campaignQuery} WHERE c.status='open' AND NOT c.hidden AND c.game IS NOT NULL AND c.deadline>now() ORDER BY c.created_at DESC`)).rows;
@@ -64,7 +64,7 @@ export function gameRoutes(app, db, chain, c, { sendMail } = {}) {
       .map(({ kadena_account, ...r }) => ({ ...r, who: `${kadena_account.slice(0, 10)}…${kadena_account.slice(-6)}` }));
     res.json({
       games: GAME_KINDS.map(k => ({ id: k, ...GAMES[k] })), rounds: rows.map(roundView), stats: paid, recent,
-      rules: { email_required: !!c.games.requireEmail, email_ready: !!mailer, writes: c.writes, wins_per_day: c.games.winsPerDay, attempts: c.games.attempts, ai_max_reward_kda: c.games.maxReward },
+      rules: { email_required: !!c.games.requireEmail, email_ready: !!mailer, writes: c.writes, wins_per_day: c.games.winsPerDay, wins_per_day_total: c.games.winsPerDayTotal, attempts: c.games.attempts, ai_max_reward_kda: c.games.maxReward },
     });
   });
 
@@ -80,7 +80,7 @@ export function gameRoutes(app, db, chain, c, { sendMail } = {}) {
       FROM task_campaigns c LEFT JOIN submissions s ON s.campaign_id=c.id AND s.user_id=$1 LEFT JOIN payouts p ON p.submission_id=s.id
       WHERE c.game IS NOT NULL AND (s.id IS NOT NULL OR EXISTS(SELECT 1 FROM game_sessions g WHERE g.campaign_id=c.id AND g.user_id=$1))
       ORDER BY c.id DESC LIMIT 100`, [req.user.id])).rows;
-    res.json({ email: u.email_verified_at ? u.email : null, email_verified: !!u.email_verified_at, pending_email: pending?.email || null, wins_today: wins, rounds });
+    res.json({ email: u.email_verified_at ? u.email : null, email_verified: !!u.email_verified_at, pending_email: pending?.email || null, wins_today: wins, wins_today_total: await winsToday(db, req.user.id), rounds });
   });
 
   app.post('/api/me/email', authenticated, async (req, res) => {
@@ -146,6 +146,7 @@ export function gameRoutes(app, db, chain, c, { sendMail } = {}) {
       if (active) return sessionView(active, c.games.attempts - used);
       requireValue(used < c.games.attempts, 409, `You have used all ${c.games.attempts} attempts in this round`);
       requireValue(await winsToday(tx, req.user.id, row.game) < c.games.winsPerDay, 409, `You already won ${GAMES[row.game].name} today. Come back tomorrow.`);
+      requireValue(await winsToday(tx, req.user.id) < c.games.winsPerDayTotal, 409, `You already won ${c.games.winsPerDayTotal} games today. Come back tomorrow.`);
       // Hold a reward slot exactly like a task start (30 minutes, bounded by the deadline).
       let start = (await tx.query('SELECT * FROM task_starts WHERE campaign_id=$1 AND user_id=$2 FOR UPDATE', [cid, req.user.id])).rows[0];
       if (!(start?.state === 'started' && Date.parse(start.expires_at) > Date.now())) {
@@ -229,6 +230,10 @@ export function gameRoutes(app, db, chain, c, { sendMail } = {}) {
       if (await winsToday(tx, req.user.id, s.game) >= c.games.winsPerDay) {
         await tx.query("UPDATE game_sessions SET status='failed',finished_at=now(),play=$2,result=$3 WHERE id=$1", [sid, JSON.stringify(play), JSON.stringify({ message: 'daily_cap' })]);
         return out(`You already won ${GAMES[s.game].name} today, so this round cannot pay again until tomorrow.`);
+      }
+      if (await winsToday(tx, req.user.id) >= c.games.winsPerDayTotal) {
+        await tx.query("UPDATE game_sessions SET status='failed',finished_at=now(),play=$2,result=$3 WHERE id=$1", [sid, JSON.stringify(play), JSON.stringify({ message: 'daily_total_cap' })]);
+        return out(`You already won ${c.games.winsPerDayTotal} games today, so this round cannot pay until tomorrow.`);
       }
       const start = (await tx.query('SELECT * FROM task_starts WHERE campaign_id=$1 AND user_id=$2 FOR UPDATE', [s.campaign_id, req.user.id])).rows[0];
       requireValue(start?.state === 'started' && Date.parse(start.expires_at) > Date.now(), 409, 'Your reward slot expired. Start the round again.');

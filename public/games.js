@@ -80,6 +80,7 @@ function playButton(r) {
   }
   if (mine?.active_session) return `<button class="btn orange" data-play="${r.id}">Resume</button>`;
   if (mine && Number(mine.attempts_used) >= rules.attempts) return '<button class="btn" disabled>No tries left</button>';
+  if (rules.wins_per_day_total && (state.me.wins_today_total || 0) >= rules.wins_per_day_total) return '<button class="btn" disabled>Daily win limit reached · back tomorrow</button>';
   if ((state.me.wins_today[r.game] || 0) >= rules.wins_per_day) return '<button class="btn" disabled>Won today · back tomorrow</button>';
   if (r.left < 1) return '<button class="btn" disabled>All prizes taken</button>';
   const triesLeft = rules.attempts - Number(mine?.attempts_used || 0);
@@ -91,7 +92,7 @@ function renderLobby() {
   $('#gWins').textContent = fmt(d.stats.wins); $('#gKda').textContent = fmt(d.stats.kda);
   $('#gOpen').textContent = fmt(d.rounds.reduce((s, r) => s + Number(r.reward) * r.left, 0));
   $('#gFeed').innerHTML = d.recent.length ? d.recent.map(p => `<li><span class="who">${esc(p.who)}</span><b class="kda">${fmt(p.reward)}</b><span class="what">Won ${esc(d.games.find(g => g.id === p.game)?.name || 'a game')}</span><span class="tx">${p.tx ? `<a href="/transactions/${esc(p.tx)}?chain=1" target="_blank" rel="noopener noreferrer">${esc(short(p.tx))}</a>` : ''}</span>${p.ai ? `<a class="badge ai feed-ai" href="/ai-receipts/${esc(p.receipt)}">${ROBOT} Reviewed &amp; paid by AI agent</a>` : ''}</li>`).join('') : '<li class="empty">No wins paid yet. Be the first.</li>';
-  $('#rulesLine').textContent = `One win per game per day · ${rules.attempts} tries per round${rules.email_required ? ' · confirmed email needed' : ''}`;
+  $('#rulesLine').textContent = `One win per game, ${rules.wins_per_day_total || 3} wins a day · ${rules.attempts} tries per round${rules.email_required ? ' · confirmed email needed' : ''}`;
   renderEmail(); renderOwner();
   $('#rounds').innerHTML = d.rounds.length ? d.rounds.map(r => `<article class="game-card">
       <div class="gc-top"><span class="gc-icon">${ICON[r.game]}</span><div><h3>${esc(r.game_name)}</h3><span class="kda">${fmt(r.reward)}</span></div></div>
