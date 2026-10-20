@@ -317,10 +317,11 @@ test('Security fixes: lost Word round keeps the word secret; player text cannot 
  } finally { await t.close(); }
 });
 
-test('Launch limits: the AI pays game wins up to 20 KDA, and a wallet can win 3 games a day in total', async () => {
+test('Launch limits: the AI pays game wins up to 20 KDA, and a daily total win limit still works when set', async () => {
  const t = await setup('ke_games_limits', false);
  try {
-   assert.equal(t.c.games.maxReward, '20'); assert.equal(t.c.games.dailyKda, '200'); assert.equal(t.c.games.winsPerDayTotal, 3);
+   assert.equal(t.c.games.maxReward, '20'); assert.equal(t.c.games.dailyKda, '200'); assert.equal(t.c.games.winsPerDayTotal, 8, 'default: one win per game, all 8 games');
+   t.c.games.winsPerDayTotal = 3; // GAMES_TOTAL_WINS_PER_WALLET_PER_DAY=3
    assert.equal((await t.owner.raw('/games')).data.rules.wins_per_day_total, 3);
    const u = await client(t.base, testKey());
    const start = async cid => { const s = (await u.call('/games/' + cid + '/play', {})).data; assert.ok(s.id, JSON.stringify(s));
