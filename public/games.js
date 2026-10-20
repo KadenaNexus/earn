@@ -10,7 +10,7 @@ const fmt = n => Number(n || 0).toLocaleString('en-US', { maximumFractionDigits:
 const short = s => s ? `${s.slice(0, 10)}…${s.slice(-6)}` : '';
 const clock = ms => { const s = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 const state = { config: null, user: null, csrf: null, data: null, me: null, stage: null };
-let wallet, timer, tracker;
+let wallet, timer, tracker, livePoll;
 
 const PRACTICE = ['tiles', 'logic', 'memory', 'mines'];
 const ICON = {
@@ -86,6 +86,25 @@ function playButton(r) {
   const triesLeft = rules.attempts - Number(mine?.attempts_used || 0);
   return `<button class="btn orange" data-play="${r.id}">Play for ${fmt(r.reward)} KDA</button><span class="state">${triesLeft} ${triesLeft === 1 ? 'try' : 'tries'} left</span>`;
 }
+// Live activity: who is mid-round right now, and how many wallets played in the last 24 hours.
+function liveLine(l) {
+  if (!l || (!l.playing.length && !l.today)) return '';
+  const now = l.playing.length ? `<span class="live-now"><i class="live-dot" aria-hidden="true"></i>${l.playing.length} playing now</span>` : '';
+  const today = l.today ? `<span>${l.today} ${l.today === 1 ? 'player' : 'players'} today</span>` : '';
+  return `<div class="gc-live" title="${esc(l.playing.join(', '))}">${now}${today}</div>`;
+}
+function liveStrip(l) {
+  const mine = state.user ? short(state.user.account) : null;
+  const others = (l?.playing || []).filter(w => w !== mine);
+  if (!others.length) return `<i class="live-dot quiet" aria-hidden="true"></i>No one else is on this game right now${l?.today ? ` · ${l.today} ${l.today === 1 ? 'player' : 'players'} today` : ''}`;
+  return `<i class="live-dot" aria-hidden="true"></i><b>${others.length} ${others.length === 1 ? 'other player' : 'other players'} solving now:</b> ${others.map(w => `<span class="live-who">${esc(w)}</span>`).join('')}`;
+}
+async function pollLive(game) {
+  const draw = l => { const el = $('#gLive'); if (el) el.innerHTML = liveStrip(l); };
+  draw(state.data.live?.[game]);
+  const run = async () => { if (document.hidden) return; try { const all = await api('/games/live'); state.data.live = all; draw(all[game]); } catch { /* keep the last view */ } };
+  run(); livePoll = setInterval(run, 15000);
+}
 function endsIn(deadline) { const h = (Date.parse(deadline) - Date.now()) / 3600000; return h < 1 ? `${Math.max(1, Math.round(h * 60))} min` : h < 48 ? `${Math.round(h)} h` : `${Math.round(h / 24)} days`; }
 function renderLobby() {
   const d = state.data, rules = d.rules;
@@ -98,6 +117,7 @@ function renderLobby() {
       <div class="gc-top"><span class="gc-icon">${ICON[r.game]}</span><div><h3>${esc(r.game_name)}</h3><span class="kda">${fmt(r.reward)}</span></div></div>
       <p>${esc(r.title)}</p>
       <div class="meta"><span>${r.left} of ${r.max} prizes left</span><span>Ends in ${endsIn(r.deadline)}</span><span>${r.minutes} min per try</span></div>
+      ${liveLine(d.live?.[r.game])}
       <div class="foot">${playButton(r)}</div></article>`).join('')
     : `<div class="empty-card">No rounds are open right now. New rounds are announced on <a href="https://t.me/KadenaNexus">Telegram</a> and <a href="https://x.com/KadenaNexus">@KadenaNexus</a>.</div>`;
   $$('[data-connect]').forEach(b => b.onclick = () => action(b, connect));
@@ -152,8 +172,8 @@ async function openRound() {
 }
 
 // ---------- Stage ----------
-function openStage(html) { document.onkeydown = null; clearInterval(timer); clearInterval(tracker); $('#lobby').hidden = true; const s = $('#stage'); s.hidden = false; s.innerHTML = html; scrollTo({ top: 0 }); }
-function closeStage() { document.onkeydown = null; clearInterval(timer); clearInterval(tracker); state.stage = null; $('#stage').hidden = true; $('#lobby').hidden = false; load().catch(e => notify(e.message)); }
+function openStage(html) { document.onkeydown = null; clearInterval(timer); clearInterval(tracker); clearInterval(livePoll); $('#lobby').hidden = true; const s = $('#stage'); s.hidden = false; s.innerHTML = html; scrollTo({ top: 0 }); }
+function closeStage() { document.onkeydown = null; clearInterval(timer); clearInterval(tracker); clearInterval(livePoll); state.stage = null; $('#stage').hidden = true; $('#lobby').hidden = false; load().catch(e => notify(e.message)); }
 function bar(title, pills) {
   return `<div class="g-bar"><h2>${esc(title)}</h2><button class="g-back" id="gClose" aria-label="Back to games">← Games</button></div><div class="g-status">${pills}</div>`;
 }
@@ -182,7 +202,8 @@ function begin(st) {
   state.stage = { ...st, t0: performance.now() - since, done: false };
   const name = state.data.games.find(g => g.id === st.game).name;
   const pills = `<span class="g-pill" id="gClock"></span>${st.mode === 'paid' ? `<span class="g-pill">Prize ${fmt(st.round?.reward)} KDA</span><span class="g-pill">${st.session.attempts_left} more ${st.session.attempts_left === 1 ? 'try' : 'tries'} after this</span>` : '<span class="g-pill">Practice</span>'}`;
-  openStage(bar(name, pills) + '<div id="gBoard"></div>');
+  openStage(bar(name, pills) + '<p class="g-live" id="gLive" aria-live="polite"></p><div id="gBoard"></div>');
+  pollLive(st.game);
   $('#gClose').onclick = () => { if (state.stage?.mode === 'paid' && !state.stage.done && !confirm(['word', 'memory', 'mines'].includes(state.stage.game) ? 'Leave this puzzle? Your timer keeps running, and you can resume it from the games list.' : 'Leave this puzzle? Your timer keeps running. If you resume, this puzzle starts again from the beginning.')) return; closeStage(); };
   startClock($('#gClock'), st.mode, st.session?.expires_at);
   ({ tiles: renderTiles, logic: renderLogic, quiz: renderQuiz, riddle: renderRiddle, word: renderWord, memory: renderMemory, mines: renderMines, pactbug: renderPactbug })[st.game]();

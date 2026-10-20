@@ -55,6 +55,20 @@ export function gameRoutes(app, db, chain, c, { sendMail } = {}) {
   const winsToday = async (tx, uid, game = null) => Number((await tx.query(`SELECT count(*) n FROM submissions s JOIN task_campaigns c ON c.id=s.campaign_id
     WHERE s.user_id=$1 AND ($2::text IS NULL AND c.game IS NOT NULL OR c.game=$2) AND s.submitted_at>now()-interval '24 hours' AND s.status NOT IN ('rejected','reservation_failed')`, [uid, game])).rows[0].n);
 
+  // Who is playing each game right now (an unfinished, unexpired try), plus how many wallets played in the last 24 hours.
+  // Wallets are shortened the same way as in the public wins list.
+  const shortAccount = a => `${a.slice(0, 10)}…${a.slice(-6)}`;
+  async function live() {
+    const rows = (await db.query(`SELECT g.game, u.kadena_account, bool_or(g.status='playing' AND g.expires_at>now()) playing, max(g.started_at) last
+      FROM game_sessions g JOIN users u ON u.id=g.user_id WHERE g.started_at>now()-interval '24 hours'
+      GROUP BY g.game, u.kadena_account ORDER BY last DESC`)).rows;
+    const out = {};
+    for (const k of GAME_KINDS) out[k] = { playing: [], today: 0 };
+    for (const r of rows) { const g = out[r.game]; if (!g) continue; g.today++; if (r.playing && g.playing.length < 8) g.playing.push(shortAccount(r.kadena_account)); }
+    return out;
+  }
+  app.get('/api/games/live', async (req, res) => { res.set('Cache-Control', 'no-store'); res.json(await live()); });
+
   app.get('/api/games', async (req, res) => {
     const rows = (await db.query(`${campaignQuery} WHERE c.status='open' AND NOT c.hidden AND c.game IS NOT NULL AND c.deadline>now() ORDER BY c.created_at DESC`)).rows;
     const paid = (await db.query(`SELECT count(*) wins, coalesce(sum(p.amount_kda),0) kda FROM payouts p JOIN submissions s ON s.id=p.submission_id JOIN task_campaigns c ON c.id=s.campaign_id WHERE p.status='confirmed' AND c.game IS NOT NULL`)).rows[0];
@@ -63,7 +77,7 @@ export function gameRoutes(app, db, chain, c, { sendMail } = {}) {
       WHERE p.status='confirmed' AND c.game IS NOT NULL ORDER BY p.paid_at DESC LIMIT 8`)).rows
       .map(({ kadena_account, ...r }) => ({ ...r, who: `${kadena_account.slice(0, 10)}…${kadena_account.slice(-6)}` }));
     res.json({
-      games: GAME_KINDS.map(k => ({ id: k, ...GAMES[k] })), rounds: rows.map(roundView), stats: paid, recent,
+      games: GAME_KINDS.map(k => ({ id: k, ...GAMES[k] })), rounds: rows.map(roundView), stats: paid, recent, live: await live(),
       rules: { email_required: !!c.games.requireEmail, email_ready: !!mailer, writes: c.writes, wins_per_day: c.games.winsPerDay, wins_per_day_total: c.games.winsPerDayTotal, attempts: c.games.attempts, ai_max_reward_kda: c.games.maxReward },
     });
   });
