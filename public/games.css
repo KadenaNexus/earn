@@ -99,7 +99,7 @@
 .memgrid button.up{background:var(--bg);color:var(--ink);border:2px solid var(--teal)}
 .memgrid button.done{background:color-mix(in srgb,#2E8B57 20%,var(--bg));color:#2E8B57;border:2px solid #2E8B57}
 /* Minesweeper */
-.mgrid{display:grid;gap:3px;max-width:400px;margin:0 auto;touch-action:manipulation}
+.mgrid{display:grid;gap:3px;max-width:400px;margin:0 auto;touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .mgrid button{aspect-ratio:1;border:0;border-radius:5px;background:var(--teal);color:#fff;font:800 clamp(14px,4.5vw,20px) var(--display);padding:0}
 .mgrid button.open{background:var(--surface);color:var(--ink);border:1px solid var(--line)}
 .mgrid button.flag{background:var(--orange);color:var(--orange-ink)}

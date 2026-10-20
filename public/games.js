@@ -370,15 +370,21 @@ function renderMines() {
   st.cells = {}; (st.session?.state?.revealed || []).forEach(([i, n]) => { st.cells[i] = n; });
   st.flags = new Set(); st.flagMode = false; st.busy = false;
   const draw = () => {
-    $('#gBoard').innerHTML = `<p class="g-help">Open every square without a mine. Numbers count the mines touching a square. Mines: ${MINES.n} · Flags: ${st.flags.size}</p>
+    $('#gBoard').innerHTML = `<p class="g-help">Open every square without a mine. Numbers count the mines touching a square. Press and hold a square to flag it. Mines: ${st.puzzle.n || MINES.n} · Flags: ${st.flags.size}</p>
       <div class="mgrid" style="grid-template-columns:repeat(${w},1fr)">${[...Array(w * h).keys()].map(i => {
         const n = st.cells[i];
         return n !== undefined ? `<button data-i="${i}" class="open n${n}" disabled>${n || ''}</button>` : `<button data-i="${i}" class="${st.flags.has(i) ? 'flag' : ''}" aria-label="Closed square">${st.flags.has(i) ? '⚑' : ''}</button>`;
       }).join('')}</div>
       <div class="g-actions"><button class="btn ghost" id="gFlag" aria-pressed="${st.flagMode}">${st.flagMode ? '⚑ Flag mode on: tap to flag' : '⚑ Flag mode off: tap to open'}</button></div>`;
     $$('.mgrid [data-i]:not(.open)').forEach(b => {
-      b.onclick = () => tap(Number(b.dataset.i));
-      b.oncontextmenu = e => { e.preventDefault(); flag(Number(b.dataset.i)); };
+      const i = Number(b.dataset.i);
+      // Press and hold (about half a second) flags a square on phones; right-click flags on a computer.
+      // The board is redrawn after a flag, so the click that follows a hold is ignored by time, not by element.
+      let hold = null;
+      b.onpointerdown = e => { if (e.pointerType === 'mouse' && e.button !== 0) return; clearTimeout(hold); hold = setTimeout(() => { st.ignoreClickUntil = Date.now() + 800; navigator.vibrate?.(30); flag(i); }, 450); };
+      b.onpointerup = b.onpointerleave = b.onpointercancel = () => clearTimeout(hold);
+      b.onclick = () => { if (Date.now() < (st.ignoreClickUntil || 0)) return; tap(i); };
+      b.oncontextmenu = e => { e.preventDefault(); if (Date.now() < (st.ignoreClickUntil || 0)) return; flag(i); };
     });
     $('#gFlag').onclick = () => { st.flagMode = !st.flagMode; draw(); };
   };
@@ -396,7 +402,7 @@ function renderMines() {
     if (r.solved) finish();
   };
   draw();
-  if (Object.keys(st.cells).length === MINES.w * MINES.h - MINES.n) finish();
+  if (Object.keys(st.cells).length === MINES.w * MINES.h - (st.puzzle.n || MINES.n)) finish();
 }
 
 // Spot the Pact Bug

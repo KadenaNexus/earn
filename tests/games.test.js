@@ -419,3 +419,18 @@ test('Live activity: who is mid-round on each game, shortened, and how many play
    assert.ok(!JSON.stringify(live).includes('secret'));
  } finally { await t.close(); }
 });
+
+test('Minesweeper uses 8 mines, the first tap is always an open area, and a round started with 10 mines still finishes', async () => {
+ const { MINES, minesPlace, minesReveal } = await import('../public/games-core.js');
+ assert.equal(MINES.n, 8);
+ for (let k = 0; k < 200; k++) {
+   const first = k % 64, mines = minesPlace(Math.random, first);
+   assert.equal(mines.length, 8);
+   const r = minesReveal(mines, [], first);
+   assert.equal(r.opened.find(([i]) => i === first)[1], 0, 'first square shows 0, so an area opens');
+ }
+ // A board placed before the change (10 mines) is still judged by its own mine count.
+ const old = minesPlace(Math.random, 0, { ...MINES, n: 10 });
+ const revealed = []; for (let i = 0; i < 64; i++) if (!old.includes(i) && !revealed.includes(i)) minesReveal(old, revealed, i);
+ assert.equal(checkRound('mines', { ...MINES, n: 10 }, { mines: old }, {}, 120, { revealed, moves: 54, times: [] }).solved, true);
+});
