@@ -161,7 +161,8 @@ export function memoryFlip(cards, state, a, b) {
 }
 
 // ---------- Minesweeper (8×8, 10 mines; the first square is always safe) ----------
-export const MINES = { w: 8, h: 8, n: 10 };
+// 8 mines on 8×8 (12.5%, like classic Beginner): perfect play wins ~95%, and most boards need no blind guess.
+export const MINES = { w: 8, h: 8, n: 8 };
 export function minesAround(i, { w, h } = MINES) {
   const r = Math.floor(i / w), c = i % w, out = [];
   for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {

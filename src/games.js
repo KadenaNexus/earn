@@ -15,7 +15,7 @@ export const GAMES = {
   riddle: { name: 'Riddles', blurb: 'Answer three riddles. Short answers are fine.', minSeconds: 15, minutes: 10 },
   word: { name: 'Kadena Word', blurb: 'Guess the hidden 5-letter word in 6 tries. Colors show how close you are.', minSeconds: 20, minutes: 10 },
   memory: { name: 'Memory Match', blurb: 'Flip cards two at a time and find all 8 pairs.', minSeconds: 20, minutes: 10 },
-  mines: { name: 'Minesweeper', blurb: 'Open every safe square on an 8×8 board without hitting one of the 10 mines.', minSeconds: 25, minutes: 15 },
+  mines: { name: 'Minesweeper', blurb: 'Open every safe square on an 8×8 board without hitting one of the 8 mines.', minSeconds: 25, minutes: 15 },
   pactbug: { name: 'Spot the Pact Bug', blurb: 'Find the security mistake in a short Pact contract and explain it.', minSeconds: 30, minutes: 15 },
 };
 export const QUIZ_QUESTIONS = 5, QUIZ_PASS = 4, RIDDLE_COUNT = 3;
@@ -170,10 +170,10 @@ export function checkRound(game, puzzle, secret, play, seconds, state = null) {
       review: { game: 'Memory Match (8 pairs)', seconds: Math.round(seconds), flips: state.flips, flip_timing: timing }, flags };
   }
   if (game === 'mines') {
-    if (!secret.mines || state?.revealed.length !== MINES.w * MINES.h - MINES.n) return { solved: false, message: 'Some safe squares are still closed.' };
+    if (!secret.mines || state?.revealed.length !== MINES.w * MINES.h - secret.mines.length) return { solved: false, message: 'Some safe squares are still closed.' };
     if (timing && state.moves >= 8 && timing.median_ms < 200) flags.push(`machine-like click timing (median ${timing.median_ms} ms)`);
     return { solved: true, summary: `Cleared the 8×8 Minesweeper board in ${clock(seconds)}.`,
-      review: { game: 'Minesweeper (8×8, 10 mines)', seconds: Math.round(seconds), clicks: state.moves, click_timing: timing }, flags };
+      review: { game: `Minesweeper (8×8, ${secret.mines.length} mines)`, seconds: Math.round(seconds), clicks: state.moves, click_timing: timing }, flags };
   }
   if (game === 'pactbug') {
     const choice = Number(play.choice), written = str(play.written, 1200).trim(), b = PACT_BUGS[secret.id];
