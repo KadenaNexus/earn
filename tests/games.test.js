@@ -399,3 +399,23 @@ test('AI rejects a Quiz or Pact Bug answer that misses the key idea; never rejec
 });
 
 function buildGamePromptText() { return gamePrompt({ title: 'Quiz round', reward_kda: '5' }, { proof_json: { result: 'ok', play: '{}' } }).system; }
+
+test('Live activity: who is mid-round on each game, shortened, and how many played today', async () => {
+ const t = await setup('ke_games_live', false);
+ try {
+   const cid = await t.round('riddle');
+   const a = await client(t.base, testKey()), b = await client(t.base, testKey());
+   let live = (await t.owner.raw('/games/live')).data;
+   assert.deepEqual(live.riddle, { playing: [], today: 0 });
+   const sa = (await a.call('/games/' + cid + '/play', {})).data; await b.call('/games/' + cid + '/play', {});
+   live = (await t.owner.raw('/games/live')).data;
+   assert.equal(live.riddle.playing.length, 2); assert.equal(live.riddle.today, 2);
+   assert.match(live.riddle.playing[0], /^k:[0-9a-f]{8}…[0-9a-f]{6}$/, 'wallets are shortened');
+   assert.equal((await t.owner.raw('/games')).data.live.riddle.playing.length, 2);
+   // A finished try is no longer "playing", but still counts toward today.
+   await a.call('/games/sessions/' + sa.id + '/finish', { play: { answers: ['no', 'no', 'no'] } });
+   live = (await t.owner.raw('/games/live')).data;
+   assert.equal(live.riddle.playing.length, 1); assert.equal(live.riddle.today, 2);
+   assert.ok(!JSON.stringify(live).includes('secret'));
+ } finally { await t.close(); }
+});
