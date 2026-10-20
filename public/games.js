@@ -111,7 +111,8 @@ function renderLobby() {
   $('#gWins').textContent = fmt(d.stats.wins); $('#gKda').textContent = fmt(d.stats.kda);
   $('#gOpen').textContent = fmt(d.rounds.reduce((s, r) => s + Number(r.reward) * r.left, 0));
   $('#gFeed').innerHTML = d.recent.length ? d.recent.map(p => `<li><span class="who">${esc(p.who)}</span><b class="kda">${fmt(p.reward)}</b><span class="what">Won ${esc(d.games.find(g => g.id === p.game)?.name || 'a game')}</span><span class="tx">${p.tx ? `<a href="/transactions/${esc(p.tx)}?chain=1" target="_blank" rel="noopener noreferrer">${esc(short(p.tx))}</a>` : ''}</span>${p.ai ? `<a class="badge ai feed-ai" href="/ai-receipts/${esc(p.receipt)}">${ROBOT} Reviewed &amp; paid by AI agent</a>` : ''}</li>`).join('') : '<li class="empty">No wins paid yet. Be the first.</li>';
-  $('#rulesLine').textContent = `One win per game, ${rules.wins_per_day_total || 3} wins a day · ${rules.attempts} tries per round${rules.email_required ? ' · confirmed email needed' : ''}`;
+  const total = rules.wins_per_day_total || 8;
+  $('#rulesLine').textContent = `${total >= d.games.length ? 'One win per game per day' : `One win per game, ${total} wins a day`} · ${rules.attempts} tries per round${rules.email_required ? ' · confirmed email needed' : ''}`;
   renderEmail(); renderOwner();
   $('#rounds').innerHTML = d.rounds.length ? d.rounds.map(r => `<article class="game-card">
       <div class="gc-top"><span class="gc-icon">${ICON[r.game]}</span><div><h3>${esc(r.game_name)}</h3><span class="kda">${fmt(r.reward)}</span></div></div>
