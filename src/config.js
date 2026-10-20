@@ -23,7 +23,7 @@ export function config(env = process.env) {
     ai: {
       apiKey: env.ANTHROPIC_API_KEY || '', model: env.AI_REVIEW_MODEL || 'claude-sonnet-5-5',
       maxReward: env.AI_REVIEW_MAX_REWARD_KDA || '1', dailyKda: env.AI_REVIEW_DAILY_KDA || '10',
-      minConfidence: Number(env.AI_REVIEW_MIN_CONFIDENCE || 0.85), maxRounds: Number(env.AI_REVIEW_MAX_ROUNDS || 2),
+      minConfidence: Number(env.AI_REVIEW_MIN_CONFIDENCE || 0.8), maxRounds: Number(env.AI_REVIEW_MAX_ROUNDS || 2),
       perTick: Number(env.AI_REVIEW_PER_TICK || 3),
     },
     // Kadena Nexus Games: their own AI payout limits, separate from tasks.

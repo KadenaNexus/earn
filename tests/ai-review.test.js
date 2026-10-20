@@ -12,7 +12,7 @@ const proof = n => ({ finding: finding(n), private_link: `https://example.org/sh
 async function setup(schema, env = {}) {
  const db = await testDatabase(schema), adminKey = testKey(), opsKey = testKey();
  const c = { ...testConfig(adminKey, opsKey), module: 'kadena-earn' };
- c.ai = { apiKey: '', model: 'test-model', maxReward: '1', dailyKda: '10', minConfidence: 0.85, maxRounds: 2, perTick: 10, ...env };
+ c.ai = { apiKey: '', model: 'test-model', maxReward: '1', dailyKda: '10', minConfidence: testConfig(adminKey, opsKey).ai.minConfidence, maxRounds: 2, perTick: 10, ...env };
  const chain = new TestChain(c), worker = new Worker(db, chain, c);
  const calls = []; let next = () => ({ decision: 'approve', confidence: 0.95, reasons: 'All steps done.', note_to_contributor: 'Thanks, clear report.' });
  worker.agent = new ReviewAgent(db, chain, c, { review: async prompt => { calls.push(prompt); return next(prompt); } });
@@ -138,6 +138,23 @@ test('AI payouts carry an on-chain label and a public receipt anyone can verify'
    const ojob = (await t.db.query("SELECT command FROM chain_jobs WHERE kind='payout' AND submission_id=$1", [o.id])).rows[0];
    assert.equal(JSON.parse(ojob.command.cmd).payload.exec.data['ai-review'], undefined);
    assert.equal((await t.owner.call('/ai-receipts/' + o.id)).status, 404);
+ } finally { await t.close(); }
+});
+
+test('Default approval bar is 80%: 82% is approved by the agent, 75% goes to the owner', async () => {
+ const t = await setup('ke_ai_bar_eighty');
+ try {
+   assert.equal(t.c.ai.minConfidence, 0.8, 'default AI_REVIEW_MIN_CONFIDENCE');
+   await t.on();
+   const cid = await t.campaign();
+   t.setNext(() => ({ decision: 'approve', confidence: 0.82, reasons: 'Correct, a little short.', note_to_contributor: 'Thanks.' }));
+   const ok = await t.submit(cid, proof(82)); await t.worker.tick(); await t.worker.tick();
+   assert.ok(['approved', 'paid'].includes((await t.status(ok.id)).status), 'approved at 82%');
+   t.setNext(() => ({ decision: 'approve', confidence: 0.75, reasons: 'Probably right.', note_to_contributor: '' }));
+   const low = await t.submit(cid, proof(75)); await t.worker.tick(); await t.worker.tick();
+   assert.equal((await t.status(low.id)).status, 'in_review', '75% stays with the owner');
+   const queue = (await t.owner.call('/reviewer/submissions')).data;
+   assert.equal(queue.find(q => q.id === low.id).ai.skip_reason, 'low_confidence');
  } finally { await t.close(); }
 });
 
