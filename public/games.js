@@ -663,8 +663,25 @@ async function finishChallenge(st) {
 function renderWeekly() {
   const box = $('#weekly'), w = state.weekly; if (!box) return;
   if (!w?.top.length) { box.innerHTML = ''; return; }
-  box.innerHTML = `<div class="pagehead"><div><h2>This week’s top players</h2><p>KDA won in games and bonuses since Monday (00:00 UTC).</p></div></div>
-    <ol class="g-board wide">${w.top.map(e => `<li class="${e.you ? 'you' : ''}"><span class="pl">${e.place}</span><span class="who">${esc(e.who)}${e.you ? ' (you)' : ''}</span><span>${e.wins} ${e.wins === 1 ? 'win' : 'wins'}</span><b class="kda">${fmt(e.kda)}</b></li>`).join('')}</ol>`;
+  const lead = Number(w.top[0].kda) || 1, medal = ['🥇', '🥈', '🥉'];
+  // TikTok-style battle bar between #1 and #2, and a little race track on every row.
+  const [a, b] = w.top, battle = b ? (() => {
+    const ka = Number(a.kda), kb = Number(b.kda), pa = Math.max(12, Math.min(88, ka / (ka + kb) * 100)), gap = ka - kb;
+    return `<div class="g-battle" aria-label="Race for first place">
+      <div class="side left"><span class="face" aria-hidden="true">👑</span><span class="who">${esc(a.who)}${a.you ? ' (you)' : ''}</span><b class="kda">${fmt(ka)}</b></div>
+      <div class="bar"><i class="l" style="width:${pa}%"></i><i class="r" style="width:${100 - pa}%"></i><span class="spark" style="left:${pa}%" aria-hidden="true">⚡</span></div>
+      <div class="side right"><b class="kda">${fmt(kb)}</b><span class="who">${esc(b.who)}${b.you ? ' (you)' : ''}</span><span class="face chase" aria-hidden="true">🏃‍♂️💨</span></div>
+      <p class="taunt">${gap > 0 ? `${esc(b.who)} needs <b>${fmt(gap)} KDA</b> to take the crown 👀` : 'Neck and neck! Next win takes the lead 🔥'}</p>
+    </div>`;
+  })() : '';
+  box.innerHTML = `<div class="pagehead"><div><h2>This week’s top players</h2><p>KDA won in games and bonuses since Monday (00:00 UTC).</p></div></div>${battle}
+    <ol class="g-board wide race">${w.top.map((e, i) => {
+      const pct = Math.max(4, Math.min(100, Number(e.kda) / lead * 100));
+      return `<li class="${e.you ? 'you' : ''}"><span class="pl">${medal[i] || e.place}</span>
+        <span class="who">${esc(e.who)}${e.you ? ' (you)' : ''}${e.hot ? ' <span title="Won in the last 24 hours">🔥</span>' : ''}</span>
+        <span>${e.wins} ${e.wins === 1 ? 'win' : 'wins'}</span><b class="kda">${fmt(e.kda)}</b>
+        <span class="track" aria-hidden="true"><i style="width:${pct}%"></i><span class="runner${i > 0 && (i - 1) % 6 < 4 ? ' flip' : ''}" style="left:${pct}%">${i === 0 ? '👑' : ['🏎️', '🐎', '🏃', '🚴', '🛹', '🐢'][(i - 1) % 6]}</span></span></li>`;
+    }).join('')}</ol>`;
 }
 
 // ---------- Share a win ----------
