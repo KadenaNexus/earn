@@ -469,3 +469,47 @@ test('Daily release: a big pool opens a few prizes per day, with the next releas
    assert.equal(r.daily_release, undefined);
  } finally { await t.close(); }
 });
+
+test('Share a win: public win API and /win page with preview tags; Telegram alerts for new rounds, wins and daily release', async () => {
+ const t = await setup('ke_games_share', false);
+ try {
+   const sent = []; t.c.sendTelegram = async (s, text) => { sent.push(text); };
+   t.worker.notifier.send = t.c.sendTelegram;
+   // Telegram settings are owner-only; the token is never sent back.
+   const u = await client(t.base, testKey());
+   assert.equal((await u.call('/admin/telegram', { enabled: true })).status, 403);
+   assert.equal((await t.owner.call('/admin/telegram', { enabled: true, token: 'nope', chat: '@KadenaNexus' })).status, 400);
+   const saved = await t.owner.call('/admin/telegram', { enabled: true, token: '123456789:' + 'A'.repeat(35), chat: '@KadenaNexus', test: true });
+   assert.equal(saved.status, 200, JSON.stringify(saved.data)); assert.equal(saved.data.token_set, true); assert.equal(sent.length, 1);
+   assert.ok(!JSON.stringify((await t.owner.call('/admin/telegram')).data).includes('AAAA'));
+   // A new round is announced once.
+   sent.length = 0;
+   const cid = await t.round('riddle', { max_rewards: 4, daily_release: 2 });
+   await t.worker.notifier.run();
+   assert.ok(sent.some(m => /New prizes/.test(m) && /Riddles/.test(m)), sent.join('\n'));
+   const n1 = sent.length; await t.worker.notifier.run(); assert.equal(sent.length, n1, 'no repeat');
+   // A paid win: public view, page, and an alert.
+   const s = (await u.call('/games/' + cid + '/play', {})).data;
+   await t.db.query("UPDATE game_sessions SET started_at=now()-interval '1 minute' WHERE id=$1", [s.id]);
+   const { secret } = await t.secret(s.id);
+   const w = (await u.call('/games/sessions/' + s.id + '/finish', { play: { answers: secret.ids.map(id => RIDDLES[id].answers[0]) } })).data;
+   assert.equal((await t.owner.raw('/games/wins/' + w.submission_id)).status, 404, 'not public until paid');
+   await t.ticks(6);
+   const pub = (await t.owner.raw('/games/wins/' + w.submission_id)).data;
+   assert.equal(pub.game, 'riddle'); assert.match(pub.who, /^k:[0-9a-f]{8}…/); assert.ok(pub.tx); assert.ok(!('kadena_account' in pub));
+   const page = await (await fetch(t.base + '/win/' + w.submission_id)).text();
+   assert.match(page, /og:image" content="[^"]+\/og-games\.png"/); assert.match(page, /won 5 KDA in Riddles/); assert.match(page, /twitter:card" content="summary_large_image"/);
+   assert.match(await (await fetch(t.base + '/win/not-a-win')).text(), /not public yet/);
+   sent.length = 0; await t.worker.notifier.run();
+   assert.ok(sent.some(m => /🏆/.test(m) && /won <b>5 KDA<\/b> in Riddles/.test(m) && m.includes('/win/' + w.submission_id)), sent.join('\n'));
+   // Daily release message: once per UTC day.
+   await t.db.query("UPDATE settings SET value=jsonb_set(value,'{release_day}','\"2000-01-01\"') WHERE key='telegram_cursor'");
+   sent.length = 0; await t.worker.notifier.run();
+   assert.ok(sent.some(m => /Today's prizes are open/.test(m)), sent.join('\n'));
+   sent.length = 0; await t.worker.notifier.run(); assert.equal(sent.length, 0);
+   // Alerts off: nothing is sent.
+   await t.owner.call('/admin/telegram', { enabled: false });
+   await t.db.query("UPDATE settings SET value=jsonb_set(value,'{release_day}','\"2000-01-01\"') WHERE key='telegram_cursor'");
+   await t.worker.notifier.run(); assert.equal(sent.length, 0);
+ } finally { await t.close(); }
+});
