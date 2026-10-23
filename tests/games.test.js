@@ -717,7 +717,7 @@ test('Telegram digest: at most 1–3 summary posts a day, at fixed hours, only w
    assert.equal(sent.length, 0, 'nothing before the first slot');
    await t.worker.notifier.run(at(6)); await t.worker.notifier.run(at(7)); await t.worker.notifier.run(at(9));
    assert.equal(sent.length, 1, sent.join('\n---\n'));
-   assert.match(sent[0], /1 win, 5 KDA paid/); assert.match(sent[0], /New prizes/); assert.match(sent[0], /Riddles/); assert.match(sent[0], /Open today/);
+   assert.match(sent[0], /1 win, 5 KDA paid/); assert.match(sent[0], /New prizes/); assert.match(sent[0], /Riddles/); assert.match(sent[0], /Open today/); assert.ok(sent[0].includes('Play now: <a href="http://localhost:3000/games.html">localhost:3000/games</a>'), sent[0]);
    // No news by 16:00: no post.
    await t.worker.notifier.run(at(16)); await t.worker.notifier.run(at(20));
    assert.equal(sent.length, 1, 'quiet afternoons send nothing');

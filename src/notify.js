@@ -8,6 +8,8 @@ import { GAMES } from './games.js';
 const KEY = 'telegram', CURSOR = 'telegram_cursor';
 const short = a => `${a.slice(0, 10)}…${a.slice(-6)}`;
 const kda = v => Number(v).toLocaleString('en-US', { maximumFractionDigits: 6 });
+// The games address is written out in full, so people see where to go even when links are not shown as previews.
+const play = site => `👉 Play now: <a href="${site}/games.html">${site.replace(/^https?:\/\//, '')}/games</a>`;
 const html = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 export async function telegramSettings(db) {
@@ -50,7 +52,7 @@ export class Notifier {
       WHERE p.status='confirmed' AND c.game IS NOT NULL AND p.paid_at>$1::timestamptz ORDER BY p.paid_at LIMIT 5`, [cursor.paid_at])).rows;
     for (const w of wins) {
       out.push(`🏆 <b>${html(short(w.kadena_account))}</b> won <b>${kda(w.amount_kda)} KDA</b> in ${html(GAMES[w.game]?.name || 'a game')}${w.ai_reviewed ? ', reviewed and paid by the AI agent' : ''}.\n`
-        + `<a href="${site}/win/${w.sid}">See the win</a> · <a href="${site}/transactions/${w.request_key}?chain=${this.c.chain}">Chainweb transaction</a>\n🎮 <a href="${site}/games.html">Play Kadena Nexus Games</a>`);
+        + `<a href="${site}/win/${w.sid}">See the win</a> · <a href="${site}/transactions/${w.request_key}?chain=${this.c.chain}">Chainweb transaction</a>\n${play(site)}`);
       next.paid_at = w.paid_key; // full microsecond precision, so the same win is never sent twice
     }
     // Rounds that opened since the last alert.
@@ -59,7 +61,7 @@ export class Notifier {
       WHERE game IS NOT NULL AND status='open' AND NOT hidden AND deadline>now() AND created_at>now()-interval '14 days' ORDER BY id`)).rows.filter(r => !seen.has(String(r.id)));
     if (opened.length) {
       const lines = opened.map(r => `• ${html(GAMES[r.game]?.name || r.game)}: ${kda(r.reward_kda)} KDA × ${r.max_rewards}${r.daily_release ? ` (${r.daily_release} a day)` : ''}`);
-      out.push(`🎮 <b>New prizes in Kadena Nexus Games</b>\n${lines.join('\n')}\n\nSolve a puzzle, and the AI agent pays you in KDA from on-chain escrow.\n<a href="${site}/games.html">Play now</a>`);
+      out.push(`🎮 <b>New prizes in Kadena Nexus Games</b>\n${lines.join('\n')}\n\nSolve a puzzle, and the AI agent pays you in KDA from on-chain escrow.\n${play(site)}`);
       next.rounds = [...seen, ...opened.map(r => String(r.id))].slice(-200);
     }
     // Daily release: once per UTC day, if any round opened new prizes today.
@@ -70,7 +72,7 @@ export class Notifier {
         AND deadline>now() AND daily_release IS NOT NULL ORDER BY id`)).rows;
       const y = (await this.db.query("SELECT winners FROM challenge_days WHERE day=$1::date-1", [today]).catch(() => ({ rows: [] }))).rows[0]?.winners || [];
       const podium = y.length ? `\n\n🧩 <b>Yesterday's Daily Challenge</b>\n${y.map(w => `${['🥇', '🥈', '🥉'][w.place - 1] || w.place} ${html(w.who)}: ${w.moves} moves${w.bonus_kda ? `, +${kda(w.bonus_kda)} KDA` : ''}`).join('\n')}` : '';
-      if (daily.length || podium) out.push(`☀️ <b>Today's prizes are open</b>\n${daily.map(r => `• ${html(GAMES[r.game]?.name || r.game)}: ${r.daily_release} × ${kda(r.reward_kda)} KDA`).join('\n')}\n• Daily Challenge: a new Sliding Tiles board${podium}\n<a href="${site}/games.html">Play now</a>`);
+      if (daily.length || podium) out.push(`☀️ <b>Today's prizes are open</b>\n${daily.map(r => `• ${html(GAMES[r.game]?.name || r.game)}: ${r.daily_release} × ${kda(r.reward_kda)} KDA`).join('\n')}\n• Daily Challenge: a new Sliding Tiles board${podium}\n${play(site)}`);
     }
     return { out, next };
   }
@@ -121,7 +123,7 @@ ${(daily.length ? daily : open).map(r => `• ${html(GAMES[r.game]?.name || r.ga
 ${parts.join('\n\n')}
 
 Solve a puzzle, and the AI agent pays you in KDA from on-chain escrow.
-<a href="${site}/games.html">Play now</a>`);
+${play(site)}`);
     return { out, next };
   }
 
