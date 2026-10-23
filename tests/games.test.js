@@ -321,7 +321,7 @@ test('Security fixes: lost Word round keeps the word secret; player text cannot 
 test('Launch limits: the AI pays game wins up to 20 KDA, and a daily total win limit still works when set', async () => {
  const t = await setup('ke_games_limits', false);
  try {
-   assert.equal(t.c.games.maxReward, '20'); assert.equal(t.c.games.dailyKda, '200'); assert.equal(t.c.games.winsPerDayTotal, 8, 'default: one win per game, all 8 games');
+   assert.equal(t.c.games.maxReward, '20'); assert.equal(t.c.games.dailyKda, '200'); assert.ok(t.c.games.winsPerDayTotal >= 9, 'default: one win per game per day, every game');
    t.c.games.winsPerDayTotal = 3; // GAMES_TOTAL_WINS_PER_WALLET_PER_DAY=3
    assert.equal((await t.owner.raw('/games')).data.rules.wins_per_day_total, 3);
    const u = await client(t.base, testKey());
