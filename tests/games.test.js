@@ -480,7 +480,7 @@ test('Share a win: public win API and /win page with preview tags; Telegram aler
    const u = await client(t.base, testKey());
    assert.equal((await u.call('/admin/telegram', { enabled: true })).status, 403);
    assert.equal((await t.owner.call('/admin/telegram', { enabled: true, token: 'nope', chat: '@KadenaNexus' })).status, 400);
-   const saved = await t.owner.call('/admin/telegram', { enabled: true, token: '123456789:' + 'A'.repeat(35), chat: '@KadenaNexus', test: true });
+   const saved = await t.owner.call('/admin/telegram', { enabled: true, token: '123456789:' + 'A'.repeat(35), chat: '@KadenaNexus', test: true, mode: 'every' });
    assert.equal(saved.status, 200, JSON.stringify(saved.data)); assert.equal(saved.data.token_set, true); assert.equal(sent.length, 1);
    assert.ok(!JSON.stringify((await t.owner.call('/admin/telegram')).data).includes('AAAA'));
    // A new round is announced once.
@@ -691,5 +691,39 @@ test('Kadena 2048 is played move by move on the server; Expert rounds are harder
    assert.equal(checkRound('quiz', q.puzzle, q.secret, { choices: q.secret.answers, written: 'A long enough written answer here.' }, 120).solved, true);
    const clues = g => g.puzzle.givens.filter(Boolean).length;
    assert.ok(clues(newRound('logic', undefined, undefined, undefined, 'expert')) <= clues(newRound('logic')) + 2);
+ } finally { await t.close(); }
+});
+
+test('Telegram digest: at most 1–3 summary posts a day, at fixed hours, only when there is news', async () => {
+ const t = await setup('ke_games_digest', false);
+ try {
+   const sent = []; t.c.sendTelegram = async (s, text) => { sent.push(text); }; t.worker.notifier.send = t.c.sendTelegram;
+   t.worker.notifiedAt = Date.now() + 1e9; // keep the worker's own runs out of this test
+   const r = await t.owner.call('/admin/telegram', { enabled: true, token: '123456789:' + 'B'.repeat(35), chat: '@KadenaNexus', mode: 'digest', per_day: 2 });
+   assert.equal(r.data.mode, 'digest'); assert.equal(r.data.per_day, 2);
+   const cid = await t.round('riddle', { max_rewards: 4 });
+   const u = await client(t.base, testKey());
+   const s = (await u.call('/games/' + cid + '/play', {})).data;
+   await t.db.query("UPDATE game_sessions SET started_at=now()-interval '1 minute' WHERE id=$1", [s.id]);
+   const { secret } = await t.secret(s.id);
+   await u.call('/games/sessions/' + s.id + '/finish', { play: { answers: secret.items.map(x => x.answers[0]) } });
+   await t.ticks(6);
+   const day = new Date(); const at = h => new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), h, 5));
+   // Run at many times through the day: only the 06:00 and 16:00 slots post.
+   // Simulated clock: the last summary was 30 hours ago and the win was paid 20 hours ago (before this morning's slot).
+   await t.db.query("UPDATE settings SET value=jsonb_set(value,'{digest_at}',to_jsonb((now()-interval '30 hours')::text)) WHERE key='telegram_cursor'");
+   await t.db.query("UPDATE payouts SET paid_at=now()-interval '20 hours'");
+   for (const h of [1, 3, 5]) await t.worker.notifier.run(at(h));
+   assert.equal(sent.length, 0, 'nothing before the first slot');
+   await t.worker.notifier.run(at(6)); await t.worker.notifier.run(at(7)); await t.worker.notifier.run(at(9));
+   assert.equal(sent.length, 1, sent.join('\n---\n'));
+   assert.match(sent[0], /1 win, 5 KDA paid/); assert.match(sent[0], /New prizes/); assert.match(sent[0], /Riddles/); assert.match(sent[0], /Open today/);
+   // No news by 16:00: no post.
+   await t.worker.notifier.run(at(16)); await t.worker.notifier.run(at(20));
+   assert.equal(sent.length, 1, 'quiet afternoons send nothing');
+   // Switching to "every" does not replay the wins already summarised.
+   await t.owner.call('/admin/telegram', { enabled: true, mode: 'every' });
+   await t.worker.notifier.run();
+   assert.equal(sent.length, 1, sent.slice(1).join('\n'));
  } finally { await t.close(); }
 });

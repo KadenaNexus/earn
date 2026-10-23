@@ -181,9 +181,10 @@ function renderOwner() {
       <div class="g-row"><div class="field"><label for="bankFile">Bank file (.json)</label><input id="bankFile" type="file" accept="application/json,.json"></div><button class="btn" id="bankGo">Upload</button></div><p id="bankNote"></p>
     </details>
     <details class="g-refill" id="oTg"><summary>Telegram alerts</summary>
-      <p>Posts new rounds, every paid win and the daily prize release to your Telegram group or channel. Create a bot with @BotFather, add it to the group as admin, then paste its token and the chat id or @channel.</p>
+      <p>Posts a short summary of wins, new prizes and the Daily Challenge to your Telegram group or channel, 1 to 3 times a day (or every win, for a games-only channel). Create a bot with @BotFather, add it to the group as admin, then paste its token and the chat id or @channel.</p>
       <div class="g-row"><div class="field"><label for="tgToken">Bot token</label><input id="tgToken" type="password" autocomplete="off" placeholder="123456:ABC…"></div>
         <div class="field"><label for="tgChat">Chat id or @channel</label><input id="tgChat" placeholder="@KadenaNexus or -100…"></div>
+        <div class="field"><label for="tgMode">How often</label><select id="tgMode"><option value="1">1 summary a day (9 AM Riyadh)</option><option value="2">2 summaries a day (9 AM, 7 PM)</option><option value="3">3 summaries a day (9 AM, 3 PM, 9 PM)</option><option value="every">Every win and new round</option></select></div>
         <label class="g-check"><input type="checkbox" id="tgOn"> Alerts on</label>
         <button class="btn" id="tgSave">Save and send test</button></div><p id="tgNote"></p>
     </details>`;
@@ -214,12 +215,13 @@ function renderOwner() {
   });
   $('#oTg').ontoggle = async () => {
     if (!$('#oTg').open || $('#oTg').dataset.loaded) return; $('#oTg').dataset.loaded = '1';
-    try { const t = await api('/admin/telegram'); $('#tgChat').value = t.chat; $('#tgOn').checked = t.enabled; $('#tgNote').textContent = t.token_set ? 'A bot token is saved. Leave the token empty to keep it.' : 'No bot token saved yet.'; } catch (e) { $('#tgNote').textContent = e.message; }
+    try { const t = await api('/admin/telegram'); $('#tgChat').value = t.chat; $('#tgOn').checked = t.enabled; $('#tgMode').value = t.mode === 'every' ? 'every' : String(t.per_day || 2); $('#tgNote').textContent = t.token_set ? 'A bot token is saved. Leave the token empty to keep it.' : 'No bot token saved yet.'; } catch (e) { $('#tgNote').textContent = e.message; }
   };
   $('#tgSave').onclick = () => action($('#tgSave'), async () => {
-    const body = { enabled: $('#tgOn').checked, chat: $('#tgChat').value.trim(), test: true, ...($('#tgToken').value.trim() ? { token: $('#tgToken').value.trim() } : {}) };
+    const m = $('#tgMode').value;
+    const body = { enabled: $('#tgOn').checked, chat: $('#tgChat').value.trim(), test: true, ...(m === 'every' ? { mode: 'every' } : { mode: 'digest', per_day: Number(m) }), ...($('#tgToken').value.trim() ? { token: $('#tgToken').value.trim() } : {}) };
     const r = await api('/admin/telegram', body); $('#tgToken').value = '';
-    $('#tgNote').textContent = `Saved. Test message sent to ${r.chat}. Alerts are ${r.enabled ? 'on' : 'off'}.`;
+    $('#tgNote').textContent = `Saved. Test message sent to ${r.chat}. Alerts are ${r.enabled ? 'on' : 'off'}, ${r.mode === 'every' ? 'every win' : `${r.per_day} ${r.per_day === 1 ? 'summary' : 'summaries'} a day`}.`;
   });
 }
 // Owner: change prizes-per-day on rounds that are already open.
