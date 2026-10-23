@@ -149,3 +149,13 @@
 .g-live b{color:var(--ink);font-weight:600}
 .live-who{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:2px 9px}
 @media (prefers-reduced-motion:reduce){.live-dot{animation:none}}
+/* Owner: refill and per-day editor */
+.g-refill{margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
+.g-refill summary{cursor:pointer;font-weight:600}
+.rel-row{align-items:flex-end}
+.rel-row>span{flex:1 1 220px;font-size:14px;padding-bottom:10px}
+.g-refill>.btn{width:auto;display:inline-flex}
+.rel-row{flex-wrap:nowrap;gap:12px}
+.rel-row .field{flex:0 0 120px;min-width:0}
+.rel-row .btn{flex:0 0 auto;width:auto;min-width:96px}
+@media (max-width:560px){.rel-row{flex-wrap:wrap}.rel-row>span{flex-basis:100%;padding-bottom:0}}

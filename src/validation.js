@@ -16,6 +16,7 @@ export const campaignSchema = z.object({
  steps:z.array(text(1,500)).min(1).max(20),proof_schema:z.array(field).min(1).max(20),featured:z.boolean().default(false),
  ai_review:z.boolean().default(false),ai_criteria:z.string().trim().max(2000).optional(),
  game:z.enum(['tiles','quiz','logic','riddle','word','memory','mines','pactbug']).optional(),
+ daily_release:z.number().int().positive().max(1000).optional(),
 }).strict().refine(c=>new Set(c.proof_schema.map(f=>f.key)).size===c.proof_schema.length,'Proof field keys must be unique');
 // Owner edits after creation: only fields that live in the database. Reward,
 // slots, sponsor account and deadline are fixed by the funded escrow on chain.

@@ -11,7 +11,7 @@
 //     budget; anything with bot-like signals goes to the owner instead.
 import { randomUUID, randomBytes, createHash } from 'node:crypto';
 import { z } from 'zod';
-import { authenticated } from './auth.js';
+import { authenticated, admin } from './auth.js';
 import { audit } from './db.js';
 import { quote } from './pact.js';
 import { requireValue } from './validation.js';
@@ -55,6 +55,24 @@ export function gameRoutes(app, db, chain, c, { sendMail } = {}) {
   const winsToday = async (tx, uid, game = null) => Number((await tx.query(`SELECT count(*) n FROM submissions s JOIN task_campaigns c ON c.id=s.campaign_id
     WHERE s.user_id=$1 AND ($2::text IS NULL AND c.game IS NOT NULL OR c.game=$2) AND s.submitted_at>now()-interval '24 hours' AND s.status NOT IN ('rejected','reservation_failed')`, [uid, game])).rows[0].n);
 
+  // Daily release: a round with daily_release hands out at most that many prizes per UTC day.
+  // "Used today" = wins submitted since 00:00 UTC (not rejected) plus reward slots being played now.
+  const DAY_START = "date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'";
+  const nextRelease = () => { const d = new Date(); d.setUTCHours(24, 0, 0, 0); return d.toISOString(); };
+  async function releaseUse(tx, ids) {
+    if (!ids.length) return {};
+    const rows = (await tx.query(`SELECT c.id,
+        (SELECT count(*) FROM submissions s WHERE s.campaign_id=c.id AND s.submitted_at>=${DAY_START} AND s.status NOT IN ('rejected','reservation_failed'))
+        +(SELECT count(*) FROM task_starts t WHERE t.campaign_id=c.id AND t.state='started' AND t.expires_at>now()) AS used
+      FROM task_campaigns c WHERE c.id=ANY($1::bigint[])`, [ids])).rows;
+    return Object.fromEntries(rows.map(r => [String(r.id), Number(r.used)]));
+  }
+  const withRelease = (view, row, used) => {
+    if (!row.daily_release) return view;
+    const leftToday = Math.max(0, Math.min(view.left, row.daily_release - (used || 0)));
+    return { ...view, daily_release: row.daily_release, left_today: leftToday, next_release_at: view.left > leftToday ? nextRelease() : null };
+  };
+
   // Who is playing each game right now (an unfinished, unexpired try), plus how many wallets played in the last 24 hours.
   // Wallets are shortened the same way as in the public wins list.
   const shortAccount = a => `${a.slice(0, 10)}…${a.slice(-6)}`;
@@ -67,17 +85,30 @@ export function gameRoutes(app, db, chain, c, { sendMail } = {}) {
     for (const r of rows) { const g = out[r.game]; if (!g) continue; g.today++; if (r.playing && g.playing.length < 8) g.playing.push(shortAccount(r.kadena_account)); }
     return out;
   }
+  // Owner: set or clear the prizes-per-day limit of a game round (also for rounds already funded).
+  app.post('/api/admin/games/:id/daily-release', admin(c), async (req, res) => {
+    const cid = z.coerce.number().int().positive().parse(req.params.id);
+    const { daily_release } = z.object({ daily_release: z.number().int().positive().max(1000).nullable() }).strict().parse(req.body || {});
+    res.json(await db.tx(async tx => {
+      const row = (await tx.query('UPDATE task_campaigns SET daily_release=$2,updated_at=now() WHERE id=$1 AND game IS NOT NULL RETURNING id,daily_release', [cid, daily_release])).rows[0];
+      requireValue(row, 404, 'Game round not found');
+      await audit(tx, req.user.id, 'daily_release', 'campaign', cid, { daily_release });
+      return { id: Number(row.id), daily_release: row.daily_release };
+    }));
+  });
+
   app.get('/api/games/live', async (req, res) => { res.set('Cache-Control', 'no-store'); res.json(await live()); });
 
   app.get('/api/games', async (req, res) => {
     const rows = (await db.query(`${campaignQuery} WHERE c.status='open' AND NOT c.hidden AND c.game IS NOT NULL AND c.deadline>now() ORDER BY c.created_at DESC`)).rows;
+    const use = await releaseUse(db, rows.filter(r => r.daily_release).map(r => r.id));
     const paid = (await db.query(`SELECT count(*) wins, coalesce(sum(p.amount_kda),0) kda FROM payouts p JOIN submissions s ON s.id=p.submission_id JOIN task_campaigns c ON c.id=s.campaign_id WHERE p.status='confirmed' AND c.game IS NOT NULL`)).rows[0];
     const recent = (await db.query(`SELECT p.amount_kda reward,p.request_key tx,c.game,s.ai_reviewed ai,CASE WHEN s.ai_reviewed THEN s.id END receipt,u.kadena_account,p.paid_at
       FROM payouts p JOIN submissions s ON s.id=p.submission_id JOIN task_campaigns c ON c.id=s.campaign_id JOIN users u ON u.id=s.user_id
       WHERE p.status='confirmed' AND c.game IS NOT NULL ORDER BY p.paid_at DESC LIMIT 8`)).rows
       .map(({ kadena_account, ...r }) => ({ ...r, who: `${kadena_account.slice(0, 10)}…${kadena_account.slice(-6)}` }));
     res.json({
-      games: GAME_KINDS.map(k => ({ id: k, ...GAMES[k] })), rounds: rows.map(roundView), stats: paid, recent, live: await live(),
+      games: GAME_KINDS.map(k => ({ id: k, ...GAMES[k] })), rounds: rows.map(r => withRelease(roundView(r), r, use[String(r.id)])), stats: paid, recent, live: await live(),
       rules: { email_required: !!c.games.requireEmail, email_ready: !!mailer, writes: c.writes, wins_per_day: c.games.winsPerDay, wins_per_day_total: c.games.winsPerDayTotal, attempts: c.games.attempts, ai_max_reward_kda: c.games.maxReward },
     });
   });
@@ -167,6 +198,11 @@ export function gameRoutes(app, db, chain, c, { sendMail } = {}) {
         const occupied = Number((await tx.query(`SELECT (SELECT count(*) FROM submissions WHERE campaign_id=$1 AND status NOT IN ('rejected','reservation_failed'))+(SELECT count(*) FROM task_starts WHERE campaign_id=$1 AND state='started' AND expires_at>now()) AS n`, [cid])).rows[0].n);
         const chainOccupied = row.chain_snapshot ? Number(row.chain_snapshot['paid-count']) + Number(row.chain_snapshot['reserved-count']) : 0;
         requireValue(Math.max(occupied, chainOccupied) < row.max_rewards, 409, 'All rewards in this round are taken or being played. Try again soon.');
+        if (row.daily_release) {
+          const used = (await releaseUse(tx, [row.id]))[String(row.id)] || 0;
+          const hours = Math.max(1, Math.ceil((Date.parse(nextRelease()) - Date.now()) / 3600000));
+          requireValue(used < row.daily_release, 409, `Today's prizes in this round are taken. New prizes open in about ${hours} ${hours === 1 ? 'hour' : 'hours'}.`);
+        }
         start = (await tx.query(`INSERT INTO task_starts(campaign_id,user_id,expires_at) VALUES($1,$2,least(now()+interval '30 minutes',$3)) ON CONFLICT(campaign_id,user_id) DO UPDATE SET state='started',started_at=now(),expires_at=excluded.expires_at RETURNING *`, [cid, req.user.id, row.deadline])).rows[0];
       } else {
         // A later try gets its full time: extend the held slot to cover it.

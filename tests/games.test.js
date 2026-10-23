@@ -240,7 +240,8 @@ test('New games: Word, Memory, Minesweeper and Pact Bug win through the server a
    const { secret: ms } = await t.secret(n.s.id); assert.ok(!ms.mines.includes(27));
    for (let i = 0, k2 = 1; i < MINES.w * MINES.h; i++) if (!ms.mines.includes(i)) { const r = await n.move({ cell: i, t: 500 + 700 * k2++ }); if (r.data.solved) break; }
    // Pin the server-recorded click times to a script's pace (50 ms apart), so a slow CI runner cannot make the run look human.
-   await t.db.query("UPDATE game_sessions SET state=jsonb_set(state,'{times}',(SELECT jsonb_agg(i*50) FROM jsonb_array_elements(state->'times') WITH ORDINALITY AS x(v,i))) WHERE id=$1", [n.s.id]);
+   // With 8 mines a first click can open most of the board, so also pin the click count above the 8-click threshold.
+   await t.db.query("UPDATE game_sessions SET state=jsonb_set(jsonb_set(state,'{moves}','20'),'{times}',(SELECT jsonb_agg(i*50) FROM generate_series(1,20) i)) WHERE id=$1", [n.s.id]);
    const nw = await n.finish(); assert.equal(nw.data.solved, true, JSON.stringify(nw.data));
    // Hitting a mine ends the try.
    const boom = await solve('mines');
@@ -434,4 +435,38 @@ test('Minesweeper uses 8 mines, the first tap is always an open area, and a roun
  const old = minesPlace(Math.random, 0, { ...MINES, n: 10 });
  const revealed = []; for (let i = 0; i < 64; i++) if (!old.includes(i) && !revealed.includes(i)) minesReveal(old, revealed, i);
  assert.equal(checkRound('mines', { ...MINES, n: 10 }, { mines: old }, {}, 120, { revealed, moves: 54, times: [] }).solved, true);
+});
+
+test('Daily release: a big pool opens a few prizes per day, with the next release time', async () => {
+ const t = await setup('ke_games_daily', false);
+ try {
+   const cid = await t.round('riddle', { max_rewards: 6, daily_release: 2 });
+   let r = (await t.owner.raw('/games')).data.rounds.find(x => String(x.id) === String(cid));
+   assert.equal(r.daily_release, 2); assert.equal(r.left_today, 2); assert.equal(r.left, 6); assert.ok(r.next_release_at, 'more prizes come tomorrow');
+   const win = async () => {
+     const u = await client(t.base, testKey());
+     const s = (await u.call('/games/' + cid + '/play', {})).data; assert.ok(s.id, JSON.stringify(s));
+     await t.db.query("UPDATE game_sessions SET started_at=now()-interval '1 minute' WHERE id=$1", [s.id]);
+     const { secret } = await t.secret(s.id);
+     return (await u.call('/games/sessions/' + s.id + '/finish', { play: { answers: secret.ids.map(id => RIDDLES[id].answers[0]) } })).data;
+   };
+   assert.equal((await win()).solved, true);
+   // A player mid-round also holds one of today's prizes.
+   const playing = await client(t.base, testKey());
+   assert.equal((await playing.call('/games/' + cid + '/play', {})).status, 200);
+   r = (await t.owner.raw('/games')).data.rounds.find(x => String(x.id) === String(cid));
+   assert.equal(r.left_today, 0); assert.ok(Date.parse(r.next_release_at) > Date.now());
+   const late = await client(t.base, testKey());
+   const blocked = await late.call('/games/' + cid + '/play', {});
+   assert.equal(blocked.status, 409); assert.match(blocked.data.error, /Today's prizes/);
+   // Yesterday's wins do not count toward today.
+   await t.db.query("UPDATE submissions SET submitted_at=now()-interval '2 days' WHERE campaign_id=$1", [cid]);
+   await t.db.query("UPDATE task_starts SET expires_at=now()-interval '1 minute' WHERE campaign_id=$1 AND state='started'", [cid]);
+   assert.equal((await late.call('/games/' + cid + '/play', {})).status, 200);
+   // The owner can change it on an open round; others cannot.
+   assert.equal((await late.call('/admin/games/' + cid + '/daily-release', { daily_release: 5 })).status, 403);
+   assert.equal((await t.owner.call('/admin/games/' + cid + '/daily-release', { daily_release: null })).data.daily_release, null);
+   r = (await t.owner.raw('/games')).data.rounds.find(x => String(x.id) === String(cid));
+   assert.equal(r.daily_release, undefined);
+ } finally { await t.close(); }
 });
