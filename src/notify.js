@@ -65,7 +65,9 @@ export class Notifier {
       next.release_day = today;
       const daily = (await this.db.query(`SELECT game,reward_kda,daily_release FROM task_campaigns WHERE game IS NOT NULL AND status='open' AND NOT hidden
         AND deadline>now() AND daily_release IS NOT NULL ORDER BY id`)).rows;
-      if (daily.length) out.push(`☀️ <b>Today's prizes are open</b>\n${daily.map(r => `• ${html(GAMES[r.game]?.name || r.game)}: ${r.daily_release} × ${kda(r.reward_kda)} KDA`).join('\n')}\n<a href="${site}/games.html">Play now</a>`);
+      const y = (await this.db.query("SELECT winners FROM challenge_days WHERE day=$1::date-1", [today]).catch(() => ({ rows: [] }))).rows[0]?.winners || [];
+      const podium = y.length ? `\n\n🧩 <b>Yesterday's Daily Challenge</b>\n${y.map(w => `${['🥇', '🥈', '🥉'][w.place - 1] || w.place} ${html(w.who)}: ${w.moves} moves${w.bonus_kda ? `, +${kda(w.bonus_kda)} KDA` : ''}`).join('\n')}` : '';
+      if (daily.length || podium) out.push(`☀️ <b>Today's prizes are open</b>\n${daily.map(r => `• ${html(GAMES[r.game]?.name || r.game)}: ${r.daily_release} × ${kda(r.reward_kda)} KDA`).join('\n')}\n• Daily Challenge: a new Sliding Tiles board${podium}\n<a href="${site}/games.html">Play now</a>`);
     }
     return { out, next };
   }

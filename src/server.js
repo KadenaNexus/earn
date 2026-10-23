@@ -9,6 +9,7 @@ import { Chain } from './pact.js';
 import { Worker } from './jobs.js';
 import { ReviewAgent } from './agent.js';
 import { Notifier } from './notify.js';
+import { extraRoutes, GamesDaily } from './games-extra.js';
 import { authRoutes } from './auth.js';
 import { apiRoutes } from './api.js';
 import { setupRoutes } from './setup.js';
@@ -18,6 +19,7 @@ import { requireValue } from './validation.js';
 export function createApp(db,chain,c,worker=new Worker(db,chain,c)) {
  if(worker.agent===undefined)worker.agent=c.ai?.apiKey?new ReviewAgent(db,chain,c):null;
  if(worker.notifier===undefined)worker.notifier=new Notifier(db,c,c.sendTelegram);
+ if(worker.gamesDaily===undefined)worker.gamesDaily=new GamesDaily(db,chain,c);
  const app=express();app.disable('x-powered-by');if(c.production)app.set('trust proxy',1);
  app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'"],styleSrc:["'self'","'unsafe-inline'","https://fonts.googleapis.com"],fontSrc:["'self'","https://fonts.gstatic.com"],imgSrc:["'self'","data:"],connectSrc:["'self'",'wss://relay.walletconnect.org','wss://relay.walletconnect.com','https://*.walletconnect.org','https://*.walletconnect.com'],frameSrc:['https://verify.walletconnect.org','https://verify.walletconnect.com'],objectSrc:["'none'"],frameAncestors:["'none'"],upgradeInsecureRequests:c.production?[]:null}},strictTransportSecurity:c.production?undefined:false}));
  app.use(express.json({limit:'128kb'}));app.use(cookieParser());
@@ -31,7 +33,7 @@ export function createApp(db,chain,c,worker=new Worker(db,chain,c)) {
    }next();
  });
  app.get('/healthz',async(req,res)=>{try{await db.query('SELECT 1');res.json({ok:true});}catch{res.status(503).json({ok:false});}});
- authRoutes(app,db,c);setupRoutes(app,db,chain,c,worker);apiRoutes(app,db,chain,c,worker);gameRoutes(app,db,chain,c,{sendMail:c.sendMail,sendTelegram:c.sendTelegram});
+ authRoutes(app,db,c);setupRoutes(app,db,chain,c,worker);apiRoutes(app,db,chain,c,worker);gameRoutes(app,db,chain,c,{sendMail:c.sendMail,sendTelegram:c.sendTelegram});extraRoutes(app,db,chain,c);
  app.use('/api',(req,res)=>res.status(404).json({error:'Endpoint not found'}));
  app.get('/transactions/:key',(req,res)=>{
    requireValue(/^[A-Za-z0-9_-]{43}$/.test(req.params.key),400,'Invalid transaction request key');

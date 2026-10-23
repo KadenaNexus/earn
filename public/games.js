@@ -63,9 +63,10 @@ document.addEventListener('click', e => { if (!e.target.closest('.wallet-wrap'))
 
 // ---------- Lobby ----------
 async function load() {
-  state.data = await api('/games');
-  state.me = state.user ? await api('/me/games') : null;
-  renderLobby();
+  const [data, me, challenge, weekly, streak] = await Promise.all([api('/games'), state.user ? api('/me/games') : null,
+    api('/games/challenge').catch(() => null), api('/games/leaderboard').catch(() => null), state.user ? api('/me/streak').catch(() => null) : null]);
+  Object.assign(state, { data, me, challenge, weekly, streak });
+  renderLobby(); renderDaily(); renderWeekly();
 }
 const myRound = id => state.me?.rounds.find(r => Number(r.campaign_id) === Number(id));
 function playButton(r) {
@@ -165,6 +166,13 @@ function renderOwner() {
       <button class="btn ghost" id="oRefill">Refill empty games</button><p id="oRefillNote"></p>
     </details>
     <details class="g-refill"><summary>Prizes per day for open rounds</summary><div id="oRelease"></div></details>
+    <details class="g-refill"><summary>Bonus pools (Daily Challenge and streaks)</summary>
+      <p>Bonus prizes are reserved in escrow automatically and wait for your approval in Admin. Each wallet can get one bonus per pool.</p>
+      <div class="g-row"><div class="field"><label for="bKind">Pool</label><select id="bKind"><option value="challenge">Daily Challenge: top 3 each day</option><option value="streak">7-day streak</option></select></div>
+        <div class="field"><label for="bReward">Bonus (KDA)</label><input id="bReward" type="number" min="0.1" step="0.1" value="10"></div>
+        <div class="field"><label for="bCount">Number of bonuses</label><input id="bCount" type="number" min="1" max="1000" value="21"></div>
+        <button class="btn" id="bGo">Fund bonus pool</button></div><p id="bNote"></p>
+    </details>
     <details class="g-refill" id="oTg"><summary>Telegram alerts</summary>
       <p>Posts new rounds, every paid win and the daily prize release to your Telegram group or channel. Create a bot with @BotFather, add it to the group as admin, then paste its token and the chat id or @channel.</p>
       <div class="g-row"><div class="field"><label for="tgToken">Bot token</label><input id="tgToken" type="password" autocomplete="off" placeholder="123456:ABC…"></div>
@@ -181,6 +189,9 @@ function renderOwner() {
   $('#oGo').onclick = () => action($('#oGo'), () => openRound($('#oGame').value, String($('#oReward').value)));
   $('#oRefill').onclick = () => action($('#oRefill'), refillAll);
   renderReleaseEditor();
+  const bNote = () => { $('#bNote').textContent = `Total to fund: ${fmt(Number($('#bReward').value) * Number($('#bCount').value))} KDA.${$('#bKind').value === 'challenge' ? ` ${$('#bCount').value} bonuses cover about ${Math.ceil(Number($('#bCount').value) / 3)} days of top-3 prizes.` : ''}`; };
+  ['#bKind', '#bReward', '#bCount'].forEach(s => $(s).oninput = bNote); bNote();
+  $('#bGo').onclick = () => action($('#bGo'), fundBonus);
   $('#oTg').ontoggle = async () => {
     if (!$('#oTg').open || $('#oTg').dataset.loaded) return; $('#oTg').dataset.loaded = '1';
     try { const t = await api('/admin/telegram'); $('#tgChat').value = t.chat; $('#tgOn').checked = t.enabled; $('#tgNote').textContent = t.token_set ? 'A bot token is saved. Leave the token empty to keep it.' : 'No bot token saved yet.'; } catch (e) { $('#tgNote').textContent = e.message; }
@@ -216,6 +227,18 @@ async function refillAll() {
   }
   $('#oRefillNote').textContent = `Funding sent for ${done.join(', ')}. Rounds open once Chainweb confirms them.`;
 }
+async function fundBonus() {
+  const kind = $('#bKind').value, label = kind === 'challenge' ? 'Daily Challenge bonus pool' : 'Streak bonus pool';
+  const body = { title: `${label} – ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`, summary: `Bonus prizes for Kadena Nexus Games players: ${kind === 'challenge' ? 'the top 3 in each Daily Challenge' : 'wallets that play 7 days in a row'}.`,
+    sponsor_name: 'Kadena Nexus Games', category: 'Games', template: 'Game', reward_kda: String($('#bReward').value), max_rewards: Number($('#bCount').value), minutes_estimate: 1,
+    deadline: new Date(Date.now() + 60 * 86400000).toISOString(), steps: ['Bonus'], proof_schema: [{ key: 'result', label: 'Result', type: 'text' }], bonus_kind: kind, featured: false };
+  wallet ||= restoreWallet(); const connected = await wallet.connect(state.config.network);
+  if (connected !== state.user.account) throw new Error('Select the signed-in owner account in your wallet.');
+  const id = (await api('/admin/campaigns', body, { money: true })).campaign.id;
+  const prepared = await api(`/admin/campaigns/${id}/funding-command`, {});
+  await api(`/admin/campaigns/${id}/confirm-funding`, { signed_command: await wallet.sign(prepared.command) }, { money: true });
+  $('#bNote').textContent = `${label} funding sent. It starts once Chainweb confirms it.`;
+}
 async function openRound(game, reward, { quiet = false } = {}) {
   const g = state.data.games.find(x => x.id === game);
   const day = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -244,7 +267,7 @@ function bar(title, pills) {
 function startClock(el, mode, expiresAt) {
   const t0 = Date.now();
   const tick = () => {
-    if (mode === 'paid') { const left = Date.parse(expiresAt) - Date.now(); el.textContent = `Time left ${clock(left)}`; el.classList.toggle('hot', left < 60000); if (left <= 0) { clearInterval(timer); finish(); } }
+    if (mode === 'paid' || mode === 'challenge') { const left = Date.parse(expiresAt) - Date.now(); el.textContent = `Time left ${clock(left)}`; el.classList.toggle('hot', left < 60000); if (left <= 0) { clearInterval(timer); finish(); } }
     else el.textContent = `Time ${clock(Date.now() - t0)}`;
   };
   tick(); timer = setInterval(tick, 500);
@@ -265,9 +288,9 @@ function begin(st) {
   const since = st.session?.started_at ? Math.max(0, Date.now() - Date.parse(st.session.started_at)) : 0;
   state.stage = { ...st, t0: performance.now() - since, done: false };
   const name = state.data.games.find(g => g.id === st.game).name;
-  const pills = `<span class="g-pill" id="gClock"></span>${st.mode === 'paid' ? `<span class="g-pill">Prize ${fmt(st.round?.reward)} KDA</span><span class="g-pill">${st.session.attempts_left} more ${st.session.attempts_left === 1 ? 'try' : 'tries'} after this</span>` : '<span class="g-pill">Practice</span>'}`;
+  const pills = st.mode === 'challenge' ? '<span class="g-pill" id="gClock"></span><span class="g-pill">Daily Challenge</span><span class="g-pill">Same board for everyone · fewest moves wins</span>' : `<span class="g-pill" id="gClock"></span>${st.mode === 'paid' ? `<span class="g-pill">Prize ${fmt(st.round?.reward)} KDA</span><span class="g-pill">${st.session.attempts_left} more ${st.session.attempts_left === 1 ? 'try' : 'tries'} after this</span>` : '<span class="g-pill">Practice</span>'}`;
   openStage(bar(name, pills) + '<p class="g-live" id="gLive" aria-live="polite"></p><div id="gBoard"></div>');
-  pollLive(st.game);
+  if (st.mode !== 'challenge') pollLive(st.game); else $('#gLive').remove();
   $('#gClose').onclick = () => { if (state.stage?.mode === 'paid' && !state.stage.done && !confirm(['word', 'memory', 'mines'].includes(state.stage.game) ? 'Leave this puzzle? Your timer keeps running, and you can resume it from the games list.' : 'Leave this puzzle? Your timer keeps running. If you resume, this puzzle starts again from the beginning.')) return; closeStage(); };
   startClock($('#gClock'), st.mode, st.session?.expires_at);
   ({ tiles: renderTiles, logic: renderLogic, quiz: renderQuiz, riddle: renderRiddle, word: renderWord, memory: renderMemory, mines: renderMines, pactbug: renderPactbug })[st.game]();
@@ -498,6 +521,7 @@ async function finish() {
       <div class="g-actions" style="width:100%;max-width:380px"><button class="btn ghost" id="gBack">Back to games</button><button class="btn" id="gAgain">Play again</button></div></div>`);
     $('#gBack').onclick = closeStage; $('#gAgain').onclick = () => practice(st.game); return;
   }
+  if (st.mode === 'challenge') return finishChallenge(st);
   let r;
   try { r = await api(`/games/sessions/${st.session.id}/finish`, { play: playData() }); }
   catch (e) {
@@ -544,6 +568,52 @@ function showWin(round, summary) {
     } catch (e) { notify(e.message); }
   };
   update(); tracker = setInterval(update, 8000);
+}
+
+// ---------- Daily Challenge, streak, weekly top players ----------
+const ord = n => { const t = n % 100, u = n % 10; return n + (t >= 11 && t <= 13 ? 'th' : u === 1 ? 'st' : u === 2 ? 'nd' : u === 3 ? 'rd' : 'th'); };
+function renderDaily() {
+  const box = $('#dailyBox'), ch = state.challenge, sk = state.streak; if (!box) return;
+  if (!ch) { box.innerHTML = ''; return; }
+  const m = ch.mine, pool = ch.pool;
+  const prize = pool ? `Top ${ch.places} win a <b>${fmt(pool.reward)} KDA</b> bonus` : `Top ${ch.places} make the leaderboard`;
+  let act;
+  if (!state.user) act = '<button class="btn" data-connect>Connect wallet to play</button>';
+  else if (m?.finished) act = m.solved ? `<span class="badge ok">${m.place ? `You're ${ord(m.place)}` : 'Done'} · ${m.moves} moves · ${clock(m.seconds * 1000)}</span>${m.flagged ? '<span class="state">Not ranked: the run looked automated</span>' : ''}` : '<span class="badge warn">Time ran out today</span>';
+  else act = `<button class="btn orange" id="chPlay">${m?.active ? 'Resume today’s challenge' : 'Play today’s challenge'}</button><span class="state">One try a day · ${CHALLENGE_MIN} min</span>`;
+  const rows = ch.top.slice(0, 5).map(e => `<li><span class="pl">${e.place}</span><span class="who">${esc(e.who)}</span><span>${e.moves} moves · ${clock(e.seconds * 1000)}</span></li>`).join('');
+  const yest = ch.yesterday?.length ? `<p class="note">Yesterday: ${ch.yesterday.map(w => `${ord(w.place)} ${esc(w.who)}${w.bonus_kda ? ` (+${fmt(w.bonus_kda)} KDA)` : ''}`).join(' · ')}</p>` : '';
+  const streak = sk ? `<div class="g-streak"><span class="flame" aria-hidden="true">🔥</span><div><b>${sk.current}-day streak</b>${sk.played_today ? '' : ' · play today to keep it'}
+      <p>${sk.current >= sk.goal ? (sk.pool ? `You reached ${sk.goal} days. Your ${fmt(sk.pool.reward)} KDA streak bonus is being prepared.` : `You reached ${sk.goal} days.`) : `${sk.goal - sk.current} more ${sk.goal - sk.current === 1 ? 'day' : 'days'} to ${sk.pool ? `a <b>${fmt(sk.pool.reward)} KDA</b> streak bonus` : `a ${sk.goal}-day streak`}`}</p>
+      <div class="meter" aria-hidden="true"><i style="width:${Math.min(100, sk.current / sk.goal * 100)}%"></i></div></div></div>` : '';
+  box.innerHTML = `<div class="panel g-challenge"><div class="gc-top"><span class="gc-icon">${ICON.tiles}</span><div><h3>Daily Challenge</h3><p>Same Sliding Tiles board for everyone today. ${prize}. New board in <span data-countdown="${esc(ch.ends_at)}">${untilText(ch.ends_at)}</span>.</p></div></div>
+      ${rows ? `<ol class="g-board">${rows}</ol>` : '<p class="note">No one has finished today’s board yet. Be the first.</p>'}
+      <p class="note">${ch.players} ${ch.players === 1 ? 'player' : 'players'} today</p>${yest}<div class="foot">${act}</div></div>${streak}`;
+  $$('#dailyBox [data-connect]').forEach(b => b.onclick = () => action(b, connect));
+  if ($('#chPlay')) $('#chPlay').onclick = () => action($('#chPlay'), playChallenge);
+}
+const CHALLENGE_MIN = 15;
+async function playChallenge() {
+  const s = await api('/games/challenge/start', {});
+  begin({ mode: 'challenge', game: 'tiles', puzzle: s.puzzle, session: { started_at: s.started_at, expires_at: s.expires_at } });
+}
+async function finishChallenge(st) {
+  let r;
+  try { r = await api('/games/challenge/finish', { play: playData() }); }
+  catch (e) { st.done = false; notify(e.message); return; }
+  // Not solved yet (for example the browser clock ran a moment ahead of the server): keep the board open.
+  if (!r.solved && r.retry) { st.done = false; notify(r.message); return; }
+  if (r.solved) coinBurst();
+  openStage(`<div class="g-result"><h3>${r.solved ? (r.place ? `You're ${ord(r.place)} today` : 'Solved!') : 'Not this time'}</h3>
+    <p>${r.solved ? `${r.moves} moves in ${clock(r.seconds * 1000)}.${r.flagged ? ' This run looked automated, so it is not ranked.' : ' The top 3 at 03:00 Riyadh (00:00 UTC) win the bonus.'}` : esc(r.message)}</p>
+    <div class="g-actions" style="width:100%;max-width:380px"><button class="btn ghost" id="gBack">Back to games</button></div></div>`);
+  $('#gBack').onclick = closeStage;
+}
+function renderWeekly() {
+  const box = $('#weekly'), w = state.weekly; if (!box) return;
+  if (!w?.top.length) { box.innerHTML = ''; return; }
+  box.innerHTML = `<div class="pagehead"><div><h2>This week’s top players</h2><p>KDA won in games and bonuses since Monday (00:00 UTC).</p></div></div>
+    <ol class="g-board wide">${w.top.map(e => `<li class="${e.you ? 'you' : ''}"><span class="pl">${e.place}</span><span class="who">${esc(e.who)}${e.you ? ' (you)' : ''}</span><span>${e.wins} ${e.wins === 1 ? 'win' : 'wins'}</span><b class="kda">${fmt(e.kda)}</b></li>`).join('')}</ol>`;
 }
 
 // ---------- Share a win ----------
