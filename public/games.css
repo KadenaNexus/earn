@@ -186,7 +186,7 @@
 .g-board li .who{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .g-board li.you{border-color:var(--teal)}
 .g-board.wide{max-width:720px}
-.g-weekly{margin-top:36px}
+.g-weekly{margin:0 0 32px}
 .g-weekly:empty{display:none}
 .g-streak{align-self:start;display:flex;gap:12px;align-items:flex-start;padding:18px;border-radius:18px;background:var(--surface);border:1px solid var(--line)}
 .g-streak .flame{font-size:30px;line-height:1}
