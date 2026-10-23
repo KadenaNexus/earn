@@ -194,3 +194,6 @@
 .g-streak .meter{height:8px;border-radius:99px;background:var(--line);overflow:hidden}
 .g-streak .meter i{display:block;height:100%;background:var(--orange);border-radius:99px}
 @media (max-width:860px){.g-daily{grid-template-columns:1fr}}
+.bank-status{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 12px}
+.bank-status span{font-size:13px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:var(--bg)}
+.bank-status span.ok{border-color:var(--teal);color:var(--teal-text)}

@@ -173,6 +173,11 @@ function renderOwner() {
         <div class="field"><label for="bCount">Number of bonuses</label><input id="bCount" type="number" min="1" max="1000" value="21"></div>
         <button class="btn" id="bGo">Fund bonus pool</button></div><p id="bNote"></p>
     </details>
+    <details class="g-refill" id="oBank"><summary>Question banks (private)</summary>
+      <p>The built-in questions are public on GitHub. Upload a private bank file (JSON with any of: quiz, written, riddles, words, pactbugs) to replace them. Items are never shown back here, and each wallet is shown questions it has not seen first.</p>
+      <div id="bankStatus" class="bank-status"></div>
+      <div class="g-row"><div class="field"><label for="bankFile">Bank file (.json)</label><input id="bankFile" type="file" accept="application/json,.json"></div><button class="btn" id="bankGo">Upload</button></div><p id="bankNote"></p>
+    </details>
     <details class="g-refill" id="oTg"><summary>Telegram alerts</summary>
       <p>Posts new rounds, every paid win and the daily prize release to your Telegram group or channel. Create a bot with @BotFather, add it to the group as admin, then paste its token and the chat id or @channel.</p>
       <div class="g-row"><div class="field"><label for="tgToken">Bot token</label><input id="tgToken" type="password" autocomplete="off" placeholder="123456:ABC…"></div>
@@ -192,6 +197,19 @@ function renderOwner() {
   const bNote = () => { $('#bNote').textContent = `Total to fund: ${fmt(Number($('#bReward').value) * Number($('#bCount').value))} KDA.${$('#bKind').value === 'challenge' ? ` ${$('#bCount').value} bonuses cover about ${Math.ceil(Number($('#bCount').value) / 3)} days of top-3 prizes.` : ''}`; };
   ['#bKind', '#bReward', '#bCount'].forEach(s => $(s).oninput = bNote); bNote();
   $('#bGo').onclick = () => action($('#bGo'), fundBonus);
+  const bankStatus = async () => {
+    const s = await api('/admin/games/content');
+    const names = { quiz: 'Quiz questions', written: 'Written questions', riddles: 'Riddles', words: 'Hidden words', pactbugs: 'Pact bugs' };
+    $('#bankStatus').innerHTML = Object.entries(s).map(([k, v]) => `<span class="${v.source === 'private' ? 'ok' : ''}">${names[k]}: <b>${v.count}</b> · ${v.source === 'private' ? 'private' : 'built-in (public)'}</span>`).join('');
+  };
+  $('#oBank').ontoggle = () => { if ($('#oBank').open) bankStatus().catch(e => { $('#bankNote').textContent = e.message; }); };
+  $('#bankGo').onclick = () => action($('#bankGo'), async () => {
+    const f = $('#bankFile').files[0]; if (!f) throw new Error('Choose the bank file first.');
+    let body; try { body = JSON.parse(await f.text()); } catch { throw new Error('That file is not valid JSON.'); }
+    const r = await api('/admin/games/content', body);
+    $('#bankNote').textContent = `Uploaded: ${Object.entries(r).map(([k, v]) => `${k} ${v}`).join(', ')}. New rounds use them right away.`; $('#bankFile').value = '';
+    await bankStatus();
+  });
   $('#oTg').ontoggle = async () => {
     if (!$('#oTg').open || $('#oTg').dataset.loaded) return; $('#oTg').dataset.loaded = '1';
     try { const t = await api('/admin/telegram'); $('#tgChat').value = t.chat; $('#tgOn').checked = t.enabled; $('#tgNote').textContent = t.token_set ? 'A bot token is saved. Leave the token empty to keep it.' : 'No bot token saved yet.'; } catch (e) { $('#tgNote').textContent = e.message; }

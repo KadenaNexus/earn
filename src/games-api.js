@@ -19,6 +19,7 @@ import { enqueue, pauseState } from './jobs.js';
 import { campaignQuery, taskView } from './api.js';
 import { GAMES, GAME_KINDS, INTERACTIVE, newRound, checkRound, moveRound, publicState } from './games.js';
 import { telegramSettings, saveTelegram, telegramSender } from './notify.js';
+import { KINDS, BUILT_IN, loadBanks, validateBank, clearBankCache } from './game-bank.js';
 
 const DISPOSABLE = new Set(['mailinator.com', 'guerrillamail.com', 'guerrillamail.net', 'sharklasers.com', '10minutemail.com', 'temp-mail.org', 'tempmail.com', 'tempmail.net',
   'yopmail.com', 'trashmail.com', 'getnada.com', 'dispostable.com', 'maildrop.cc', 'fakeinbox.com', 'throwawaymail.com', 'mintemail.com', 'emailondeck.com', 'moakt.com', 'mohmal.com', 'tempail.com', 'burnermail.io', 'mailnesia.com', 'spamgourmet.com', 'tmpmail.org', 'tmail.ws']);
@@ -117,6 +118,28 @@ export function gameRoutes(app, db, chain, c, { sendMail, sendTelegram } = {}) {
 <div class="links"><a href="/transactions/${esc(w.tx)}?chain=${esc(c.chain)}">Chainweb transaction</a>${w.ai ? `<a href="/ai-receipts/${esc(w.id)}">AI receipt</a>` : ''}</div>`
   : '<h1>This win is not public yet</h1><p>It may still be on its way to Chainweb. Check again in a few minutes.</p>'}
 <p><a class="btn orange" href="/games.html">Play Kadena Nexus Games</a></p></main></body></html>`);
+  });
+
+  // Owner: private question banks. Counts only; the items themselves are never sent back.
+  app.get('/api/admin/games/content', admin(c), async (req, res) => {
+    const { banks, custom } = await loadBanks(db);
+    res.json(Object.fromEntries(KINDS.map(k => [k, { count: banks[k].length, source: custom[k] ? 'private' : 'built-in', updated_at: custom[k]?.updated_at || null, built_in: BUILT_IN[k].length }])));
+  });
+  // Upload any subset: { quiz: [...], written: [...], riddles: [...], words: [...], pactbugs: [...] }; a kind set to null goes back to the built-in bank.
+  app.post('/api/admin/games/content', admin(c), async (req, res) => {
+    const body = z.object(Object.fromEntries(KINDS.map(k => [k, z.array(z.unknown()).nullable().optional()]))).strict().parse(req.body || {});
+    const changes = {};
+    for (const k of KINDS) if (body[k] !== undefined) changes[k] = body[k] === null ? null : validateBank(k, body[k]);
+    requireValue(Object.keys(changes).length, 400, 'Nothing to upload');
+    await db.tx(async tx => {
+      for (const [k, items] of Object.entries(changes)) {
+        if (items === null) await tx.query('DELETE FROM game_content WHERE kind=$1', [k]);
+        else await tx.query('INSERT INTO game_content(kind,items,updated_at) VALUES($1,$2,now()) ON CONFLICT(kind) DO UPDATE SET items=excluded.items,updated_at=now()', [k, JSON.stringify(items)]);
+      }
+      await audit(tx, req.user.id, 'game_content', 'settings', 'game_content', Object.fromEntries(Object.entries(changes).map(([k, v]) => [k, v === null ? 'built-in' : v.length])));
+    });
+    clearBankCache();
+    res.json(Object.fromEntries(Object.entries(changes).map(([k, v]) => [k, v === null ? 'built-in' : v.length])));
   });
 
   // Owner: Telegram alerts (bot token is write-only: it is never sent back).
@@ -258,7 +281,11 @@ export function gameRoutes(app, db, chain, c, { sendMail, sendTelegram } = {}) {
         // A later try gets its full time: extend the held slot to cover it.
         start = (await tx.query(`UPDATE task_starts SET expires_at=greatest(expires_at,least(now()+make_interval(mins=>$2::int),$3)) WHERE id=$1 RETURNING *`, [start.id, GAMES[row.game].minutes + 5, row.deadline])).rows[0];
       }
-      const round = newRound(row.game);
+      // Draw from the current banks, preferring items this wallet has not seen in the last 60 days.
+      const { banks } = await loadBanks(tx);
+      const seen = new Map((await tx.query("SELECT item_key,seen_at FROM game_seen WHERE user_id=$1 AND seen_at>now()-interval '60 days'", [req.user.id])).rows.map(r => [r.item_key, Date.parse(r.seen_at)]));
+      const round = newRound(row.game, undefined, banks, seen);
+      for (const k of round.keys) await tx.query('INSERT INTO game_seen(user_id,item_key) VALUES($1,$2) ON CONFLICT(user_id,item_key) DO UPDATE SET seen_at=now()', [req.user.id, k]);
       const s = (await tx.query(`INSERT INTO game_sessions(id,campaign_id,user_id,game,puzzle,secret,state,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,least(now()+make_interval(mins=>$8::int),$9)) RETURNING *`,
         [randomUUID(), cid, req.user.id, row.game, JSON.stringify(round.puzzle), JSON.stringify(round.secret), round.state ? JSON.stringify(round.state) : null, GAMES[row.game].minutes, start.expires_at])).rows[0];
       await audit(tx, req.user.id, 'game_start', 'game_session', s.id, { campaign: cid, game: row.game, attempt: used + 1 });
