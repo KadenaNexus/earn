@@ -91,12 +91,14 @@
       </aside>
     </div>
 
-    <section class="g-weekly" id="weekly" aria-label="This week's top players"></section>
+    <!-- Desktop: weekly race and Daily Challenge side by side; phones: stacked. -->
+    <div class="g-duo">
+      <section class="g-weekly" id="weekly" aria-label="This week's top players"></section>
+      <section class="g-daily" id="dailyBox" aria-label="Daily Challenge and streak"></section>
+    </div>
 
     <div class="panel g-email" id="emailCard" hidden></div>
     <div class="panel g-owner" id="ownerCard" hidden></div>
-
-    <section class="g-daily" id="dailyBox" aria-label="Daily Challenge and streak"></section>
 
     <div class="pagehead g-head"><div><h2>Play for KDA</h2><p id="rulesLine">One win per game per day. A few tries per round.</p></div></div>
     <div class="grid" id="rounds"></div>

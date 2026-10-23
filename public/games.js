@@ -125,7 +125,10 @@ function renderLobby() {
   const total = rules.wins_per_day_total || 20;
   $('#rulesLine').textContent = `${total >= d.games.length ? 'One win per game per day' : `One win per game, ${total} wins a day`} · ${rules.attempts} tries per round${rules.email_required ? ' · confirmed email needed' : ''}`;
   renderEmail(); renderOwner();
-  $('#rounds').innerHTML = d.rounds.length ? d.rounds.map(r => `<article class="game-card">
+  // A sold-out round is hidden when a newer round of the same game still has prizes.
+  const live = new Set(d.rounds.filter(r => r.left > 0).map(r => r.game));
+  const shown = d.rounds.filter(r => r.left > 0 || !live.has(r.game));
+  $('#rounds').innerHTML = shown.length ? shown.map(r => `<article class="game-card">
       <div class="gc-top"><span class="gc-icon">${ICON[r.game]}</span><div><h3>${esc(r.game_name)}${r.difficulty === 'expert' ? ' <span class="badge expert">Expert</span>' : ''}</h3><span class="kda">${fmt(r.reward)}</span></div></div>
       <p>${esc(r.title)}</p>
       <div class="meta"><span>${prizeLine(r)}</span><span>Ends in ${endsIn(r.deadline)}</span><span>${r.minutes} min per try</span></div>
