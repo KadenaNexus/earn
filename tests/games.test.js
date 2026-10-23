@@ -435,3 +435,37 @@ test('Minesweeper uses 8 mines, the first tap is always an open area, and a roun
  const revealed = []; for (let i = 0; i < 64; i++) if (!old.includes(i) && !revealed.includes(i)) minesReveal(old, revealed, i);
  assert.equal(checkRound('mines', { ...MINES, n: 10 }, { mines: old }, {}, 120, { revealed, moves: 54, times: [] }).solved, true);
 });
+
+test('Daily release: a big pool opens a few prizes per day, with the next release time', async () => {
+ const t = await setup('ke_games_daily', false);
+ try {
+   const cid = await t.round('riddle', { max_rewards: 6, daily_release: 2 });
+   let r = (await t.owner.raw('/games')).data.rounds.find(x => String(x.id) === String(cid));
+   assert.equal(r.daily_release, 2); assert.equal(r.left_today, 2); assert.equal(r.left, 6); assert.ok(r.next_release_at, 'more prizes come tomorrow');
+   const win = async () => {
+     const u = await client(t.base, testKey());
+     const s = (await u.call('/games/' + cid + '/play', {})).data; assert.ok(s.id, JSON.stringify(s));
+     await t.db.query("UPDATE game_sessions SET started_at=now()-interval '1 minute' WHERE id=$1", [s.id]);
+     const { secret } = await t.secret(s.id);
+     return (await u.call('/games/sessions/' + s.id + '/finish', { play: { answers: secret.ids.map(id => RIDDLES[id].answers[0]) } })).data;
+   };
+   assert.equal((await win()).solved, true);
+   // A player mid-round also holds one of today's prizes.
+   const playing = await client(t.base, testKey());
+   assert.equal((await playing.call('/games/' + cid + '/play', {})).status, 200);
+   r = (await t.owner.raw('/games')).data.rounds.find(x => String(x.id) === String(cid));
+   assert.equal(r.left_today, 0); assert.ok(Date.parse(r.next_release_at) > Date.now());
+   const late = await client(t.base, testKey());
+   const blocked = await late.call('/games/' + cid + '/play', {});
+   assert.equal(blocked.status, 409); assert.match(blocked.data.error, /Today's prizes/);
+   // Yesterday's wins do not count toward today.
+   await t.db.query("UPDATE submissions SET submitted_at=now()-interval '2 days' WHERE campaign_id=$1", [cid]);
+   await t.db.query("UPDATE task_starts SET expires_at=now()-interval '1 minute' WHERE campaign_id=$1 AND state='started'", [cid]);
+   assert.equal((await late.call('/games/' + cid + '/play', {})).status, 200);
+   // The owner can change it on an open round; others cannot.
+   assert.equal((await late.call('/admin/games/' + cid + '/daily-release', { daily_release: 5 })).status, 403);
+   assert.equal((await t.owner.call('/admin/games/' + cid + '/daily-release', { daily_release: null })).data.daily_release, null);
+   r = (await t.owner.raw('/games')).data.rounds.find(x => String(x.id) === String(cid));
+   assert.equal(r.daily_release, undefined);
+ } finally { await t.close(); }
+});

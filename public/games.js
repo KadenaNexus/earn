@@ -83,6 +83,7 @@ function playButton(r) {
   if (rules.wins_per_day_total && (state.me.wins_today_total || 0) >= rules.wins_per_day_total) return '<button class="btn" disabled>Daily win limit reached · back tomorrow</button>';
   if ((state.me.wins_today[r.game] || 0) >= rules.wins_per_day) return '<button class="btn" disabled>Won today · back tomorrow</button>';
   if (r.left < 1) return '<button class="btn" disabled>All prizes taken</button>';
+  if (r.daily_release && r.left_today < 1) return `<button class="btn" disabled>Next prizes in <span data-countdown="${esc(r.next_release_at)}">${untilText(r.next_release_at)}</span></button>`;
   const triesLeft = rules.attempts - Number(mine?.attempts_used || 0);
   return `<button class="btn orange" data-play="${r.id}">Play for ${fmt(r.reward)} KDA</button><span class="state">${triesLeft} ${triesLeft === 1 ? 'try' : 'tries'} left</span>`;
 }
@@ -105,6 +106,14 @@ async function pollLive(game) {
   const run = async () => { if (document.hidden) return; try { const all = await api('/games/live'); state.data.live = all; draw(all[game]); } catch { /* keep the last view */ } };
   run(); livePoll = setInterval(run, 15000);
 }
+function untilText(at) {
+  const ms = Math.max(0, Date.parse(at) - Date.now()), h = Math.floor(ms / 3600000), m = Math.floor(ms / 60000) % 60;
+  return h ? `${h}h ${String(m).padStart(2, '0')}m` : `${Math.max(1, m)}m`;
+}
+function prizeLine(r) {
+  if (!r.daily_release) return `${r.left} of ${r.max} prizes left`;
+  return `${r.left_today} left today · ${r.left} in the pool`;
+}
 function endsIn(deadline) { const h = (Date.parse(deadline) - Date.now()) / 3600000; return h < 1 ? `${Math.max(1, Math.round(h * 60))} min` : h < 48 ? `${Math.round(h)} h` : `${Math.round(h / 24)} days`; }
 function renderLobby() {
   const d = state.data, rules = d.rules;
@@ -117,7 +126,7 @@ function renderLobby() {
   $('#rounds').innerHTML = d.rounds.length ? d.rounds.map(r => `<article class="game-card">
       <div class="gc-top"><span class="gc-icon">${ICON[r.game]}</span><div><h3>${esc(r.game_name)}</h3><span class="kda">${fmt(r.reward)}</span></div></div>
       <p>${esc(r.title)}</p>
-      <div class="meta"><span>${r.left} of ${r.max} prizes left</span><span>Ends in ${endsIn(r.deadline)}</span><span>${r.minutes} min per try</span></div>
+      <div class="meta"><span>${prizeLine(r)}</span><span>Ends in ${endsIn(r.deadline)}</span><span>${r.minutes} min per try</span></div>
       ${liveLine(d.live?.[r.game])}
       <div class="foot">${playButton(r)}</div></article>`).join('')
     : `<div class="empty-card">No rounds are open right now. New rounds are announced on <a href="https://t.me/KadenaNexus">Telegram</a> and <a href="https://x.com/KadenaNexus">@KadenaNexus</a>.</div>`;
@@ -145,20 +154,57 @@ function renderOwner() {
     <div class="g-row">
       <div class="field"><label for="oGame">Game</label><select id="oGame">${state.data.games.map(g => `<option value="${g.id}">${esc(g.name)}</option>`).join('')}</select></div>
       <div class="field"><label for="oReward">Prize per win (KDA)</label><input id="oReward" type="number" min="0.1" step="0.1" value="5"></div>
-      <div class="field"><label for="oCount">Number of prizes</label><input id="oCount" type="number" min="1" max="1000" value="10"></div>
-      <div class="field"><label for="oHours">Open for (hours)</label><input id="oHours" type="number" min="1" max="720" value="24"></div>
+      <div class="field"><label for="oCount">Number of prizes</label><input id="oCount" type="number" min="1" max="1000" value="30"></div>
+      <div class="field"><label for="oDaily">Prizes per day</label><input id="oDaily" type="number" min="1" max="1000" value="5" placeholder="All at once"></div>
+      <div class="field"><label for="oDays">Open for (days)</label><input id="oDays" type="number" min="1" max="60" value="10"></div>
       <button class="btn" id="oGo">Fund round</button>
-    </div><p id="oNote"></p>`;
-  const note = () => { const total = Number($('#oReward').value) * Number($('#oCount').value); $('#oNote').textContent = `Total to fund: ${fmt(total)} KDA. AI payouts for games are limited to ${fmt(state.data.rules.ai_max_reward_kda)} KDA per win; larger prizes wait for you in Admin.`; };
-  ['#oReward', '#oCount'].forEach(s => $(s).oninput = note); note();
-  $('#oGo').onclick = () => action($('#oGo'), openRound);
+    </div><p id="oNote"></p>
+    <details class="g-refill"><summary>Refill every empty game at once</summary>
+      <p>Opens one round for each game that has no prizes left, using its last prize amount and the numbers above. Your wallet asks you to sign once per game.</p>
+      <button class="btn ghost" id="oRefill">Refill empty games</button><p id="oRefillNote"></p>
+    </details>
+    <details class="g-refill"><summary>Prizes per day for open rounds</summary><div id="oRelease"></div></details>`;
+  const note = () => {
+    const total = Number($('#oReward').value) * Number($('#oCount').value), daily = Number($('#oDaily').value) || 0;
+    const days = daily ? Math.ceil(Number($('#oCount').value) / daily) : 0;
+    $('#oNote').textContent = `Total to fund: ${fmt(total)} KDA.${daily ? ` ${daily} prizes open each day (new ones at 03:00 Riyadh / 00:00 UTC), lasting about ${days} ${days === 1 ? 'day' : 'days'}.` : ' All prizes open at once.'} AI payouts for games are limited to ${fmt(state.data.rules.ai_max_reward_kda)} KDA per win; larger prizes wait for you in Admin.`;
+  };
+  ['#oReward', '#oCount', '#oDaily'].forEach(s => $(s).oninput = note); note();
+  $('#oGo').onclick = () => action($('#oGo'), () => openRound($('#oGame').value, String($('#oReward').value)));
+  $('#oRefill').onclick = () => action($('#oRefill'), refillAll);
+  renderReleaseEditor();
 }
-async function openRound() {
-  const game = $('#oGame').value, g = state.data.games.find(x => x.id === game);
+// Owner: change prizes-per-day on rounds that are already open.
+function renderReleaseEditor() {
+  const box = $('#oRelease'); if (!box) return;
+  const rounds = state.data.rounds.filter(r => r.left > 0);
+  box.innerHTML = rounds.length ? rounds.map(r => `<div class="g-row rel-row"><span>${esc(r.game_name)} · ${fmt(r.reward)} KDA · ${r.left} left</span>
+      <div class="field"><label for="rel${r.id}">Per day</label><input id="rel${r.id}" type="number" min="1" max="1000" value="${r.daily_release || ''}" placeholder="All"></div>
+      <button class="btn ghost" data-rel="${r.id}">Save</button></div>`).join('') : '<p>No open rounds with prizes left.</p>';
+  $$('[data-rel]').forEach(b => b.onclick = () => action(b, async () => {
+    const v = Number($(`#rel${b.dataset.rel}`).value) || null;
+    await api(`/admin/games/${b.dataset.rel}/daily-release`, { daily_release: v });
+    notify(v ? `Saved: ${v} prizes per day.` : 'Saved: all prizes open at once.'); await load(); renderReleaseEditor();
+  }));
+}
+async function refillAll() {
+  const empty = state.data.games.filter(g => !state.data.rounds.some(r => r.game === g.id && r.left > 0));
+  if (!empty.length) return notify('Every game still has prizes.');
+  const last = Object.fromEntries((state.data.recent || []).map(p => [p.game, p.reward]));
+  const done = [];
+  for (const g of empty) {
+    const reward = String(Number(last[g.id] || (g.id === 'pactbug' ? 20 : ['tiles', 'quiz'].includes(g.id) ? 5 : 10)));
+    $('#oRefillNote').textContent = `Funding ${g.name} (${done.length + 1} of ${empty.length}): confirm in your wallet…`;
+    await openRound(g.id, reward, { quiet: true }); done.push(g.name);
+  }
+  $('#oRefillNote').textContent = `Funding sent for ${done.join(', ')}. Rounds open once Chainweb confirms them.`;
+}
+async function openRound(game, reward, { quiet = false } = {}) {
+  const g = state.data.games.find(x => x.id === game);
   const day = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   const body = { title: `${g.name} round – ${day}`, summary: `${g.blurb} Win KDA paid from escrow by the AI agent.`, sponsor_name: 'Kadena Nexus Games', category: 'Games', template: 'Game',
-    reward_kda: String($('#oReward').value), max_rewards: Number($('#oCount').value), minutes_estimate: g.minutes,
-    deadline: new Date(Date.now() + Number($('#oHours').value) * 3600000).toISOString(), steps: ['Play'], proof_schema: [{ key: 'result', label: 'Game result', type: 'text' }], game, featured: false, ai_review: true };
+    reward_kda: reward, max_rewards: Number($('#oCount').value), minutes_estimate: g.minutes, ...(Number($('#oDaily').value) ? { daily_release: Number($('#oDaily').value) } : {}),
+    deadline: new Date(Date.now() + Number($('#oDays').value) * 86400000).toISOString(), steps: ['Play'], proof_schema: [{ key: 'result', label: 'Game result', type: 'text' }], game, featured: false, ai_review: true };
   wallet ||= restoreWallet(); const connected = await wallet.connect(state.config.network);
   if (connected !== state.user.account) throw new Error('Select the signed-in owner account in your wallet.');
   const same = state.draftRound && state.draftRound.game === game && state.draftRound.reward === body.reward_kda && state.draftRound.count === body.max_rewards;
@@ -168,7 +214,7 @@ async function openRound() {
   const signed_command = await wallet.sign(prepared.command);
   await api(`/admin/campaigns/${id}/confirm-funding`, { signed_command }, { money: true });
   state.draftRound = null;
-  notify('Funding sent. The round opens once Chainweb confirms it, usually within a few minutes.');
+  if (!quiet) notify('Funding sent. The round opens once Chainweb confirms it, usually within a few minutes.');
   await load();
 }
 
@@ -522,6 +568,7 @@ async function init() {
     if (email) { notify({ confirmed: 'Email confirmed. You can play for KDA now.', taken: 'That email is already confirmed for another wallet.', invalid: 'That confirmation link has expired or was already used.' }[email] || ''); history.replaceState(null, '', '/games.html'); }
     await load();
     setInterval(() => { if (!document.hidden && !$('#lobby').hidden) load().catch(() => {}); }, 20000);
+    setInterval(() => $$('[data-countdown]').forEach(el => { el.textContent = untilText(el.dataset.countdown); if (Date.parse(el.dataset.countdown) <= Date.now()) load().catch(() => {}); }), 30000);
   } catch (e) { notify(e.message); $('#rounds').innerHTML = '<div class="empty-card">Unable to load games. Refresh in a moment.</div>'; }
 }
 init();
