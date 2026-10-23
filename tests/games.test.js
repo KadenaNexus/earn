@@ -38,7 +38,7 @@ test('Quiz and riddle answers stay on the server and are graded there', () => {
  assert.equal(wrong.solved, false); assert.match(wrong.message, /0 of 5/);
  const r = newRound('riddle');
  assert.equal(r.puzzle.riddles.length, 3); assert.ok(!JSON.stringify(r.puzzle).includes('answers'));
- const answers = r.secret.ids.map(id => RIDDLES[id].answers[0]);
+ const answers = r.secret.items.map(x => x.answers[0]);
  assert.equal(checkRound('riddle', r.puzzle, r.secret, { answers }, 60).solved, true);
  assert.equal(checkRound('riddle', r.puzzle, r.secret, { answers: ['no', 'no', 'no'] }, 60).solved, false);
  // Too fast for a person: still solved, but flagged for the owner.
@@ -192,7 +192,7 @@ test('Email is optional by default: a signed-in wallet can play, and the daily c
    assert.ok(s.id, JSON.stringify(s));
    const { secret } = await t.secret(s.id);
    await t.db.query("UPDATE game_sessions SET started_at=now()-interval '1 minute' WHERE id=$1", [s.id]);
-   const answers = secret.ids.map(id => RIDDLES[id].answers[0]);
+   const answers = secret.items.map(x => x.answers[0]);
    assert.equal((await u.call('/games/sessions/' + s.id + '/finish', { play: { answers } })).data.solved, true);
    const cid2 = await t.round('riddle');
    assert.match((await u.call('/games/' + cid2 + '/play', {})).data.error, /today/);
@@ -269,7 +269,7 @@ test('Pre-launch fixes: daily cap at finish, renewed slot for later tries, faile
      const s = (await u.call('/games/' + cid + '/play', {})).data;
      await t.db.query("UPDATE game_sessions SET started_at=now()-interval '1 minute' WHERE id=$1", [s.id]);
      const { secret } = await t.secret(s.id);
-     return { s, finish: () => u.call('/games/sessions/' + s.id + '/finish', { play: { answers: secret.ids.map(id => RIDDLES[id].answers[0]) } }) };
+     return { s, finish: () => u.call('/games/sessions/' + s.id + '/finish', { play: { answers: secret.items.map(x => x.answers[0]) } }) };
    };
    // Two rounds started before either is finished: only one can be won today.
    const a = await t.round('riddle'), b = await t.round('riddle');
@@ -337,7 +337,7 @@ test('Launch limits: the AI pays game wins up to 20 KDA, and a daily total win l
    assert.equal(paid.status, 'paid'); assert.equal(Number(paid.amount_kda), 20);
    // Wins 2 and 3.
    const r = await start(await t.round('riddle'));
-   assert.equal((await finish(r.s, { answers: r.secret.ids.map(id => RIDDLES[id].answers[0]) })).data.solved, true);
+   assert.equal((await finish(r.s, { answers: r.secret.items.map(x => x.answers[0]) })).data.solved, true);
    const q = await start(await t.round('quiz'));
    assert.equal((await finish(q.s, { choices: q.secret.answers, written: 'Gas stations pay fees so new users can start without KDA.' })).data.solved, true);
    assert.equal((await u.call('/me/games')).data.wins_today_total, 3);
@@ -349,7 +349,7 @@ test('Launch limits: the AI pays game wins up to 20 KDA, and a daily total win l
    const open = [];
    for (const cid of [ra, qa, la, wa]) { const s = (await v.call('/games/' + cid + '/play', {})).data; await t.db.query("UPDATE game_sessions SET started_at=now()-interval '3 minutes' WHERE id=$1", [s.id]); open.push({ s, secret: (await t.secret(s.id)).secret }); }
    const vf = (o, play) => v.call('/games/sessions/' + o.s.id + '/finish', { play });
-   assert.equal((await vf(open[0], { answers: open[0].secret.ids.map(id => RIDDLES[id].answers[0]) })).data.solved, true);
+   assert.equal((await vf(open[0], { answers: open[0].secret.items.map(x => x.answers[0]) })).data.solved, true);
    assert.equal((await vf(open[1], { choices: open[1].secret.answers, written: 'Gas stations pay fees so new users can start without KDA.' })).data.solved, true);
    assert.equal((await vf(open[2], { grid: open[2].secret.solution, entries: 30 })).data.solved, true);
    await v.call('/games/sessions/' + open[3].s.id + '/move', { move: { guess: open[3].secret.word, t: 9000 } });
@@ -447,7 +447,7 @@ test('Daily release: a big pool opens a few prizes per day, with the next releas
      const s = (await u.call('/games/' + cid + '/play', {})).data; assert.ok(s.id, JSON.stringify(s));
      await t.db.query("UPDATE game_sessions SET started_at=now()-interval '1 minute' WHERE id=$1", [s.id]);
      const { secret } = await t.secret(s.id);
-     return (await u.call('/games/sessions/' + s.id + '/finish', { play: { answers: secret.ids.map(id => RIDDLES[id].answers[0]) } })).data;
+     return (await u.call('/games/sessions/' + s.id + '/finish', { play: { answers: secret.items.map(x => x.answers[0]) } })).data;
    };
    assert.equal((await win()).solved, true);
    // A player mid-round also holds one of today's prizes.
@@ -492,7 +492,7 @@ test('Share a win: public win API and /win page with preview tags; Telegram aler
    const s = (await u.call('/games/' + cid + '/play', {})).data;
    await t.db.query("UPDATE game_sessions SET started_at=now()-interval '1 minute' WHERE id=$1", [s.id]);
    const { secret } = await t.secret(s.id);
-   const w = (await u.call('/games/sessions/' + s.id + '/finish', { play: { answers: secret.ids.map(id => RIDDLES[id].answers[0]) } })).data;
+   const w = (await u.call('/games/sessions/' + s.id + '/finish', { play: { answers: secret.items.map(x => x.answers[0]) } })).data;
    assert.equal((await t.owner.raw('/games/wins/' + w.submission_id)).status, 404, 'not public until paid');
    await t.ticks(6);
    const pub = (await t.owner.raw('/games/wins/' + w.submission_id)).data;
@@ -584,5 +584,41 @@ test('Daily Challenge, streak bonus, bonus pools and weekly leaderboard', async 
    await t.ticks(4);
    const week = (await players[1].call('/games/leaderboard')).data;
    assert.equal(week.top[0].you, true); assert.equal(Number(week.top[0].kda), 3);
+ } finally { await t.close(); }
+});
+
+test('Private question banks: owner upload replaces the public bank, items stay private, wallets get unseen items first', async () => {
+ const t = await setup('ke_games_banks', false);
+ try {
+   const u = await client(t.base, testKey());
+   const riddles = Array.from({ length: 12 }, (_, i) => ({ q: `Private riddle number ${i} for testing only?`, answers: [`answer${i}`] }));
+   assert.equal((await u.call('/admin/games/content', { riddles })).status, 403);
+   const bad = await t.owner.call('/admin/games/content', { quiz: [{ q: 'Too few questions here', o: ['a', 'b', 'c'], a: 5 }] });
+   assert.equal(bad.status, 400);
+   assert.equal((await t.owner.call('/admin/games/content', { riddles, words: Array.from({ length: 20 }, (_, i) => 'abcde'.slice(0, 4) + String.fromCharCode(97 + i)) })).status, 200);
+   const status = (await t.owner.call('/admin/games/content')).data;
+   assert.equal(status.riddles.source, 'private'); assert.equal(status.riddles.count, 12); assert.equal(status.quiz.source, 'built-in');
+   assert.ok(!JSON.stringify(status).includes('Private riddle'), 'items are never sent back');
+   // A wallet sees 12 different riddles over 4 rounds before any repeats.
+   const seen = new Set();
+   for (let k = 0; k < 4; k++) {
+     const cid = await t.round('riddle');
+     const s = (await u.call('/games/' + cid + '/play', {})).data;
+     for (const r of s.puzzle.riddles) { assert.match(r.q, /Private riddle/); seen.add(r.q); }
+     assert.ok(!JSON.stringify(s).includes('answer'), 'answers stay on the server');
+     const { secret } = await t.secret(s.id);
+     await t.db.query("UPDATE game_sessions SET started_at=now()-interval '1 minute' WHERE id=$1", [s.id]);
+     const done = (await u.call('/games/sessions/' + s.id + '/finish', { play: { answers: secret.items.map(x => x.answers[0]) } })).data;
+     assert.equal(done.solved, true, JSON.stringify(done));
+     await t.db.query("UPDATE submissions SET submitted_at=now()-interval '2 days' WHERE user_id=(SELECT user_id FROM game_sessions WHERE id=$1)", [s.id]);
+   }
+   assert.equal(seen.size, 12, 'no repeats while unseen riddles remain');
+   // A round in progress keeps its own copy: replacing the bank does not break it.
+   const cid = await t.round('riddle'); const v = await client(t.base, testKey());
+   const s = (await v.call('/games/' + cid + '/play', {})).data; const { secret } = await t.secret(s.id);
+   assert.equal((await t.owner.call('/admin/games/content', { riddles: null })).data.riddles, 'built-in');
+   await t.db.query("UPDATE game_sessions SET started_at=now()-interval '1 minute' WHERE id=$1", [s.id]);
+   assert.equal((await v.call('/games/sessions/' + s.id + '/finish', { play: { answers: secret.items.map(x => x.answers[0]) } })).data.solved, true);
+   assert.equal((await t.owner.call('/admin/games/content')).data.riddles.source, 'built-in');
  } finally { await t.close(); }
 });

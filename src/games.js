@@ -3,7 +3,8 @@
 // from server timestamps, before the AI agent reviews how it was played.
 import { randomInt } from 'node:crypto';
 import { tilesGenerate, tilesCheck, logicGenerate, logicCheck, intervalStats, answerMatches, wordScore, WORD_TRIES, memoryGenerate, memoryFlip, MINES, minesPlace, minesReveal, minesAround } from '../public/games-core.js';
-import { QUIZ, WRITTEN, RIDDLES, WORDS, PACT_BUGS } from './game-content.js';
+import { RIDDLES, PACT_BUGS } from './game-content.js';
+import { BUILT_IN, pickFresh, itemKey } from './game-bank.js';
 
 export const GAME_KINDS = ['tiles', 'quiz', 'logic', 'riddle', 'word', 'memory', 'mines', 'pactbug'];
 // Games played move by move against the server, which keeps the hidden part.
@@ -27,32 +28,39 @@ function pick(list, n, rand) {
   return idx.slice(0, n);
 }
 
-// Returns { puzzle } for the player and { secret } kept on the server.
-export function newRound(game, rand = secureRand) {
+// Returns { puzzle } for the player and { secret } kept on the server, plus the
+// content keys used (so the same wallet is not shown them again soon).
+// banks: the question banks to draw from; seen: Map of content key -> last seen time.
+export function newRound(game, rand = secureRand, banks = BUILT_IN, seen = new Map()) {
+  const r = buildRound(game, rand, banks, seen);
+  return { ...r, keys: r.keys || [] };
+}
+function buildRound(game, rand, banks, seen) {
+  const { quiz: QUIZ, written: WRITTEN, riddles: RIDDLES_BANK, words: WORDS, pactbugs: BUGS } = banks;
   if (game === 'tiles') return { puzzle: tilesGenerate(rand), secret: {} };
   if (game === 'logic') { const { puzzle, solution } = logicGenerate(rand); return { puzzle, secret: { solution } }; }
   if (game === 'quiz') {
-    const ids = pick(QUIZ, QUIZ_QUESTIONS, rand);
+    const ids = pickFresh(QUIZ, QUIZ_QUESTIONS, rand, seen);
     const questions = [], answers = [];
     for (const id of ids) {
       const order = pick(QUIZ[id].o, QUIZ[id].o.length, rand);
       questions.push({ q: QUIZ[id].q, o: order.map(i => QUIZ[id].o[i]) });
       answers.push(order.indexOf(QUIZ[id].a));
     }
-    const w = WRITTEN[Math.floor(rand() * WRITTEN.length)];
-    return { puzzle: { questions, written: w.q }, secret: { ids, answers, written: w } };
+    const w = WRITTEN[pickFresh(WRITTEN, 1, rand, seen)[0]];
+    return { puzzle: { questions, written: w.q }, secret: { answers, written: w }, keys: [...ids.map(i => itemKey(QUIZ[i])), itemKey(w)] };
   }
   if (game === 'riddle') {
-    const ids = pick(RIDDLES, RIDDLE_COUNT, rand);
-    return { puzzle: { riddles: ids.map(id => ({ q: RIDDLES[id].q })) }, secret: { ids } };
+    const items = pickFresh(RIDDLES_BANK, RIDDLE_COUNT, rand, seen).map(i => RIDDLES_BANK[i]);
+    return { puzzle: { riddles: items.map(x => ({ q: x.q })) }, secret: { items }, keys: items.map(itemKey) };
   }
-  if (game === 'word') return { puzzle: { letters: 5, tries: WORD_TRIES }, secret: { word: WORDS[Math.floor(rand() * WORDS.length)] }, state: { guesses: [], times: [] } };
+  if (game === 'word') { const word = WORDS[pickFresh(WORDS, 1, rand, seen)[0]]; return { puzzle: { letters: 5, tries: WORD_TRIES }, secret: { word }, state: { guesses: [], times: [] }, keys: [itemKey(word)] }; }
   if (game === 'memory') return { puzzle: { cards: 16, columns: 4 }, secret: { cards: memoryGenerate(rand) }, state: { flips: 0, matched: [], times: [] } };
   if (game === 'mines') return { puzzle: { ...MINES }, secret: { mines: null }, state: { revealed: [], moves: 0, times: [] } };
   if (game === 'pactbug') {
-    const id = Math.floor(rand() * PACT_BUGS.length), b = PACT_BUGS[id];
+    const b = BUGS[pickFresh(BUGS, 1, rand, seen)[0]];
     const order = pick(b.o, b.o.length, rand);
-    return { puzzle: { code: b.code, options: order.map(i => b.o[i]) }, secret: { id, answer: order.indexOf(b.a) } };
+    return { puzzle: { code: b.code, options: order.map(i => b.o[i]) }, secret: { bug: b, answer: order.indexOf(b.a) }, keys: [itemKey(b)] };
   }
   throw new Error('Unknown game');
 }
@@ -147,11 +155,13 @@ export function checkRound(game, puzzle, secret, play, seconds, state = null) {
   }
   if (game === 'riddle') {
     const answers = Array.isArray(play.answers) ? play.answers.slice(0, RIDDLE_COUNT).map(a => str(a, 100)) : [];
-    const results = secret.ids.map((id, i) => answerMatches(answers[i], RIDDLES[id].answers));
+    // Rounds started before banks moved into the secret still carry ids into the built-in bank.
+    const items = secret.items || secret.ids.map(id => RIDDLES[id]);
+    const results = items.map((x, i) => answerMatches(answers[i], x.answers));
     const right = results.filter(Boolean).length;
     if (right < RIDDLE_COUNT) return { solved: false, message: `${right} of ${RIDDLE_COUNT} riddles right. Try again with new riddles.` };
     return { solved: true, summary: `Solved ${right} of ${RIDDLE_COUNT} riddles in ${clock(seconds)}.`,
-      review: { game: 'Riddles', seconds: Math.round(seconds), riddles: secret.ids.map((id, i) => ({ riddle: RIDDLES[id].q, accepted: RIDDLES[id].answers, player: answers[i] })) }, flags };
+      review: { game: 'Riddles', seconds: Math.round(seconds), riddles: items.map((x, i) => ({ riddle: x.q, accepted: x.answers, player: answers[i] })) }, flags };
   }
   const timing = intervalStats(state?.times);
   if (game === 'word') {
@@ -176,7 +186,7 @@ export function checkRound(game, puzzle, secret, play, seconds, state = null) {
       review: { game: `Minesweeper (8×8, ${secret.mines.length} mines)`, seconds: Math.round(seconds), clicks: state.moves, click_timing: timing }, flags };
   }
   if (game === 'pactbug') {
-    const choice = Number(play.choice), written = str(play.written, 1200).trim(), b = PACT_BUGS[secret.id];
+    const choice = Number(play.choice), written = str(play.written, 1200).trim(), b = secret.bug || PACT_BUGS[secret.id];
     if (choice !== secret.answer) return { solved: false, message: 'That is not the bug. Try again with a new contract.' };
     if (written.length < 20) return { solved: false, message: 'Right bug. Write at least a sentence on why it is dangerous.' };
     return { solved: true, summary: 'Found the bug in a Pact contract and explained it.',
