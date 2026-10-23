@@ -159,3 +159,16 @@
 .rel-row .field{flex:0 0 120px;min-width:0}
 .rel-row .btn{flex:0 0 auto;width:auto;min-width:96px}
 @media (max-width:560px){.rel-row{flex-wrap:wrap}.rel-row>span{flex-basis:100%;padding-bottom:0}}
+/* Share a win */
+.g-share{width:100%;max-width:520px;margin:18px auto 0;text-align:center}
+.g-share h4{margin:0 0 10px;font:700 16px var(--display)}
+.g-share-row{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
+.g-share-row .btn{width:auto;min-width:120px;text-decoration:none}
+.btn.sm{padding:6px 12px;min-height:0;font-size:13px;width:auto}
+.g-check{display:flex;align-items:center;gap:8px;padding-bottom:12px;font-size:14px}
+/* Public win page */
+.win-page{max-width:720px;padding-top:48px;padding-bottom:64px}
+.win-page h1{font:800 clamp(30px,6vw,48px)/1.1 var(--display);margin:8px 0 14px}
+.win-page .win-game{font-size:18px;color:var(--ink)}
+.win-page .links{display:flex;gap:16px;flex-wrap:wrap;margin:14px 0 28px}
+.win-page .btn{display:inline-flex;width:auto;text-decoration:none}

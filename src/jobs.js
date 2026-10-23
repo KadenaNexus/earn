@@ -168,6 +168,8 @@ export class Worker {
      // The AI reviewer runs after chain jobs so its payouts broadcast next tick.
      // Its own errors never stop payments or refunds.
      if(this.agent)try{await this.agent.run();}catch(error){this.agent.lastError=error.message;console.error(JSON.stringify({event:'ai_review_error',error:error.message}));}
+     // Telegram alerts for games, at most once a minute; never blocks the rest of the tick.
+     if(this.notifier&&Date.now()-(this.notifiedAt||0)>=60000){this.notifiedAt=Date.now();try{await this.notifier.run();}catch(error){console.error(JSON.stringify({event:'notify_error',error:error.message}));}}
      // Before deployment there is no contract to query. Saved transactions are
      // still polled above, including recovery while new writes are disabled.
      if(this.c.module) {

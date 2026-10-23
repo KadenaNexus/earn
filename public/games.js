@@ -74,7 +74,7 @@ function playButton(r) {
   if (!state.user) return `<button class="btn" data-connect>Connect wallet to play</button>`;
   if (rules.email_required && !state.me.email_verified) return `<button class="btn" data-email>Confirm email to play</button>`;
   if (mine?.submission_id && mine.status !== 'reservation_failed') {
-    if (mine.status === 'paid') return `<span class="badge ok">Won · paid</span>${mine.tx ? `<span class="state">${txLink(mine.tx)}</span>` : ''}`;
+    if (mine.status === 'paid') return `<span class="badge ok">Won · paid</span><button class="btn ghost sm" data-share="${esc(mine.submission_id)}">Share</button>`;
     if (mine.status === 'rejected') return '<span class="badge warn">Not approved</span>';
     return `<button class="btn ghost" data-track="${r.id}">Won · see payout</button>`;
   }
@@ -133,6 +133,7 @@ function renderLobby() {
   $$('[data-connect]').forEach(b => b.onclick = () => action(b, connect));
   $$('[data-email]').forEach(b => b.onclick = () => { $('#emailCard').scrollIntoView({ behavior: 'smooth', block: 'center' }); $('#gEmail')?.focus(); });
   $$('[data-play]').forEach(b => b.onclick = () => action(b, () => playPaid(Number(b.dataset.play))));
+  $$('[data-share]').forEach(b => b.onclick = () => action(b, () => shareWin(b.dataset.share)));
   $$('[data-track]').forEach(b => b.onclick = () => showWin(d.rounds.find(r => Number(r.id) === Number(b.dataset.track)), null));
 }
 function renderEmail() {
@@ -163,7 +164,14 @@ function renderOwner() {
       <p>Opens one round for each game that has no prizes left, using its last prize amount and the numbers above. Your wallet asks you to sign once per game.</p>
       <button class="btn ghost" id="oRefill">Refill empty games</button><p id="oRefillNote"></p>
     </details>
-    <details class="g-refill"><summary>Prizes per day for open rounds</summary><div id="oRelease"></div></details>`;
+    <details class="g-refill"><summary>Prizes per day for open rounds</summary><div id="oRelease"></div></details>
+    <details class="g-refill" id="oTg"><summary>Telegram alerts</summary>
+      <p>Posts new rounds, every paid win and the daily prize release to your Telegram group or channel. Create a bot with @BotFather, add it to the group as admin, then paste its token and the chat id or @channel.</p>
+      <div class="g-row"><div class="field"><label for="tgToken">Bot token</label><input id="tgToken" type="password" autocomplete="off" placeholder="123456:ABC…"></div>
+        <div class="field"><label for="tgChat">Chat id or @channel</label><input id="tgChat" placeholder="@KadenaNexus or -100…"></div>
+        <label class="g-check"><input type="checkbox" id="tgOn"> Alerts on</label>
+        <button class="btn" id="tgSave">Save and send test</button></div><p id="tgNote"></p>
+    </details>`;
   const note = () => {
     const total = Number($('#oReward').value) * Number($('#oCount').value), daily = Number($('#oDaily').value) || 0;
     const days = daily ? Math.ceil(Number($('#oCount').value) / daily) : 0;
@@ -173,6 +181,15 @@ function renderOwner() {
   $('#oGo').onclick = () => action($('#oGo'), () => openRound($('#oGame').value, String($('#oReward').value)));
   $('#oRefill').onclick = () => action($('#oRefill'), refillAll);
   renderReleaseEditor();
+  $('#oTg').ontoggle = async () => {
+    if (!$('#oTg').open || $('#oTg').dataset.loaded) return; $('#oTg').dataset.loaded = '1';
+    try { const t = await api('/admin/telegram'); $('#tgChat').value = t.chat; $('#tgOn').checked = t.enabled; $('#tgNote').textContent = t.token_set ? 'A bot token is saved. Leave the token empty to keep it.' : 'No bot token saved yet.'; } catch (e) { $('#tgNote').textContent = e.message; }
+  };
+  $('#tgSave').onclick = () => action($('#tgSave'), async () => {
+    const body = { enabled: $('#tgOn').checked, chat: $('#tgChat').value.trim(), test: true, ...($('#tgToken').value.trim() ? { token: $('#tgToken').value.trim() } : {}) };
+    const r = await api('/admin/telegram', body); $('#tgToken').value = '';
+    $('#tgNote').textContent = `Saved. Test message sent to ${r.chat}. Alerts are ${r.enabled ? 'on' : 'off'}.`;
+  });
 }
 // Owner: change prizes-per-day on rounds that are already open.
 function renderReleaseEditor() {
@@ -522,10 +539,42 @@ function showWin(round, summary) {
       if (m.status === 'reservation_failed') $('#gSteps').innerHTML = '<li>The escrow reservation did not go through. Play the round again while it is open.</li>';
       if (m.status === 'rejected') $('#gSteps').innerHTML = `<li>A reviewer did not approve this win.${m.review_note ? ' ' + esc(m.review_note) : ''}</li>`;
       $('#gLinks').innerHTML = m.status === 'paid' ? `${txLink(m.tx)}<a href="/ai-receipts/${esc(m.submission_id)}">AI receipt</a>` : '';
+      if (m.status === 'paid' && !$('#gShare')) { $('#gLinks').insertAdjacentHTML('afterend', '<div id="gShare" class="g-share"></div>'); shareWin(m.submission_id, $('#gShare')).catch(() => {}); }
       if (['paid', 'rejected', 'reservation_failed'].includes(m.status)) clearInterval(tracker);
     } catch (e) { notify(e.message); }
   };
   update(); tracker = setInterval(update, 8000);
+}
+
+// ---------- Share a win ----------
+// A paid win can be posted to X (text + link to its /win page, which shows a preview) or saved as an image.
+async function shareWin(id, into) {
+  let w; try { w = await api(`/games/wins/${id}`); } catch { return notify('This win is still confirming on Chainweb. Try again in a minute.'); }
+  const url = `${location.origin}/win/${w.id}`;
+  const text = `I solved ${w.game_name} and won ${fmt(w.reward)} KDA${w.ai ? ', reviewed and paid by an AI agent' : ''} on #Kadena 🎮\n\n${w.result}\n\nPlay Kadena Nexus Games:`;
+  const x = `https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}&via=KadenaNexus`;
+  const html = `<h4>Share your win</h4><div class="g-share-row"><a class="btn orange" href="${esc(x)}" target="_blank" rel="noopener noreferrer">Post on X</a>
+    <button class="btn ghost" id="gSaveImg">Save image</button><button class="btn ghost" id="gCopyLink">Copy link</button></div>`;
+  let box = into;
+  if (!box) { openStage(`<div class="g-result"><h3>You won ${fmt(w.reward)} KDA</h3><p>${esc(w.game_name)}: ${esc(w.result)}</p><div class="g-share" id="gShare"></div>
+    <div class="g-actions" style="width:100%;max-width:380px"><button class="btn ghost" id="gBack">Back to games</button></div></div>`); $('#gBack').onclick = closeStage; box = $('#gShare'); }
+  box.innerHTML = html;
+  $('#gCopyLink').onclick = async () => { try { await navigator.clipboard.writeText(url); notify('Link copied.'); } catch { notify(url); } };
+  $('#gSaveImg').onclick = () => { const a = document.createElement('a'); a.download = `kadena-win-${w.game}.png`; a.href = winImage(w); a.click(); };
+}
+function winImage(w) {
+  const cv = document.createElement('canvas'); cv.width = 1200; cv.height = 630; const g = cv.getContext('2d');
+  g.fillStyle = '#0B2028'; g.fillRect(0, 0, 1200, 630);
+  for (let k = 0; k < 12; k++) { const x = 760 + (k * 137) % 420, y = 40 + (k * 151) % 560, r = 18 + (k * 7) % 28; g.fillStyle = '#16384A'; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); g.fillStyle = '#1F4A5C'; g.font = `700 ${r}px Inter, system-ui, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('K', x, y + 1); }
+  g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+  g.fillStyle = '#B9CDD5'; g.font = '600 34px Inter, system-ui, sans-serif'; g.fillText('Kadena Nexus Games · Confirmed on Chainweb', 80, 120);
+  g.fillStyle = '#F2F6F7'; g.font = '800 84px Inter, system-ui, sans-serif'; g.fillText(`Won ${fmt(w.reward)} KDA`, 80, 250);
+  g.fillStyle = '#E2710A'; g.font = '800 60px Inter, system-ui, sans-serif'; g.fillText(w.game_name, 80, 335);
+  g.fillStyle = '#F2F6F7'; g.font = '500 32px Inter, system-ui, sans-serif'; g.fillText(w.result.slice(0, 70), 80, 410);
+  g.fillStyle = '#B9CDD5'; g.font = '500 30px Inter, system-ui, sans-serif'; g.fillText(`${w.who}${w.ai ? ' · reviewed and paid by an AI agent' : ''}`, 80, 470);
+  g.fillStyle = '#E2710A'; g.beginPath(); g.roundRect(80, 520, 470, 60, 30); g.fill();
+  g.fillStyle = '#123A48'; g.font = '700 30px Inter, system-ui, sans-serif'; g.textAlign = 'center'; g.fillText('earn.kadena.ws/games', 315, 561);
+  return cv.toDataURL('image/png');
 }
 
 // ---------- Start ----------

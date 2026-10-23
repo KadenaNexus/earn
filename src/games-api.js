@@ -18,6 +18,7 @@ import { requireValue } from './validation.js';
 import { enqueue, pauseState } from './jobs.js';
 import { campaignQuery, taskView } from './api.js';
 import { GAMES, GAME_KINDS, INTERACTIVE, newRound, checkRound, moveRound, publicState } from './games.js';
+import { telegramSettings, saveTelegram, telegramSender } from './notify.js';
 
 const DISPOSABLE = new Set(['mailinator.com', 'guerrillamail.com', 'guerrillamail.net', 'sharklasers.com', '10minutemail.com', 'temp-mail.org', 'tempmail.com', 'tempmail.net',
   'yopmail.com', 'trashmail.com', 'getnada.com', 'dispostable.com', 'maildrop.cc', 'fakeinbox.com', 'throwawaymail.com', 'mintemail.com', 'emailondeck.com', 'moakt.com', 'mohmal.com', 'tempail.com', 'burnermail.io', 'mailnesia.com', 'spamgourmet.com', 'tmpmail.org', 'tmail.ws']);
@@ -45,7 +46,10 @@ export function resendSender(mail, fetchImpl = fetch) {
 const sessionView = (s, attemptsLeft) => ({ id: s.id, campaign_id: Number(s.campaign_id), game: s.game, puzzle: s.puzzle, state: publicState(s.game, s.secret, s.state), started_at: s.started_at, expires_at: s.expires_at, status: s.status, attempts_left: attemptsLeft });
 const roundView = r => ({ ...taskView(r), game: r.game, game_name: GAMES[r.game]?.name, minutes: GAMES[r.game]?.minutes });
 
-export function gameRoutes(app, db, chain, c, { sendMail } = {}) {
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const esc = s => String(s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+
+export function gameRoutes(app, db, chain, c, { sendMail, sendTelegram } = {}) {
   const mailer = sendMail || (c.mail?.resendKey ? resendSender(c.mail) : null);
   const assertWrites = () => requireValue(c.writes, 503, 'Blockchain writes are disabled until deployment and review are ready');
   const assertRunning = async tx => requireValue(!(await pauseState(tx, { lock: true })).paused, 409, 'Payouts are paused right now. Try again later.');
@@ -85,6 +89,52 @@ export function gameRoutes(app, db, chain, c, { sendMail } = {}) {
     for (const r of rows) { const g = out[r.game]; if (!g) continue; g.today++; if (r.playing && g.playing.length < 8) g.playing.push(shortAccount(r.kadena_account)); }
     return out;
   }
+  // A paid game win, public (game wins are always published with consent): for the share card and /win/:id.
+  async function winView(id) {
+    if (!UUID.test(id)) return null;
+    const w = (await db.query(`SELECT s.id,s.proof_json,s.ai_reviewed,c.game,p.amount_kda,p.request_key,p.paid_at,u.kadena_account
+      FROM submissions s JOIN task_campaigns c ON c.id=s.campaign_id JOIN payouts p ON p.submission_id=s.id JOIN users u ON u.id=s.user_id
+      WHERE s.id=$1 AND c.game IS NOT NULL AND s.status='paid' AND p.status='confirmed'`, [id])).rows[0];
+    if (!w) return null;
+    return { id: w.id, game: w.game, game_name: GAMES[w.game]?.name, reward: w.amount_kda, tx: w.request_key, paid_at: w.paid_at,
+      ai: !!w.ai_reviewed, who: shortAccount(w.kadena_account), result: w.proof_json?.result || '' };
+  }
+  app.get('/api/games/wins/:id', async (req, res) => { const w = await winView(req.params.id); requireValue(w, 404, 'Win not found'); res.json(w); });
+  // Share page with preview tags, so a link posted on X or Telegram shows the win.
+  app.get('/win/:id', async (req, res) => {
+    const w = await winView(req.params.id);
+    const title = w ? `${w.who} won ${Number(w.reward)} KDA in ${w.game_name}` : 'Kadena Nexus Games';
+    const desc = w ? `${w.result} ${w.ai ? 'Reviewed and paid by an AI agent' : 'Paid'} from on-chain escrow on Kadena. Solve a puzzle and win KDA.` : 'Solve a puzzle. Win KDA, paid by an AI agent from on-chain escrow on Kadena.';
+    const url = `${c.origin}/win/${w ? w.id : ''}`, img = `${c.origin}/og-games.png`;
+    res.set('Cache-Control', 'no-cache').type('html').send(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${esc(title)}</title><meta name="description" content="${esc(desc)}">
+<meta property="og:type" content="website"><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(desc)}"><meta property="og:url" content="${esc(url)}"><meta property="og:image" content="${esc(img)}">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:site" content="@KadenaNexus"><meta name="twitter:title" content="${esc(title)}"><meta name="twitter:description" content="${esc(desc)}"><meta name="twitter:image" content="${esc(img)}">
+<link rel="icon" href="/favicon.svg"><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/games.css"><script src="/theme.js"></script></head>
+<body><main class="wrap win-page">${w ? `<p class="note">Kadena Nexus Games · Confirmed on Chainweb</p><h1>${esc(w.who)} won <span class="kda lg">${esc(Number(w.reward))}</span> KDA</h1>
+<p class="win-game">${esc(w.game_name)}: ${esc(w.result)}</p>
+<p>${w.ai ? 'Reviewed and paid by the AI agent' : 'Paid'} from on-chain escrow, ${esc(new Date(w.paid_at).toUTCString().replace(' GMT', ' UTC'))}.</p>
+<div class="links"><a href="/transactions/${esc(w.tx)}?chain=${esc(c.chain)}">Chainweb transaction</a>${w.ai ? `<a href="/ai-receipts/${esc(w.id)}">AI receipt</a>` : ''}</div>`
+  : '<h1>This win is not public yet</h1><p>It may still be on its way to Chainweb. Check again in a few minutes.</p>'}
+<p><a class="btn orange" href="/games.html">Play Kadena Nexus Games</a></p></main></body></html>`);
+  });
+
+  // Owner: Telegram alerts (bot token is write-only: it is never sent back).
+  const telegram = sendTelegram || telegramSender();
+  app.get('/api/admin/telegram', admin(c), async (req, res) => { const s = await telegramSettings(db); res.json({ enabled: !!s.enabled, chat: s.chat || '', token_set: !!s.token }); });
+  app.post('/api/admin/telegram', admin(c), async (req, res) => {
+    const body = z.object({ token: z.string().trim().regex(/^\d{5,15}:[A-Za-z0-9_-]{30,60}$/, 'That does not look like a Telegram bot token').optional().or(z.literal('')),
+      chat: z.string().trim().regex(/^(-?\d{5,20}|@[A-Za-z0-9_]{5,32})$/, 'Use the chat id (like -100123…) or @channelname').optional(), enabled: z.boolean(), test: z.boolean().optional() }).strict().parse(req.body || {});
+    const v = await saveTelegram(db, body);
+    await audit(db, req.user.id, 'telegram_settings', 'settings', 'telegram', { enabled: v.enabled, chat: v.chat });
+    if (body.test) {
+      requireValue(v.token && v.chat, 400, 'Add the bot token and chat first');
+      try { await (c.sendTelegram || telegram)(v, '✅ Kadena Nexus Games alerts are connected. New rounds and wins will appear here.'); }
+      catch (error) { requireValue(false, 502, `Telegram did not accept the message: ${error.message.replace(/bot\d+:[\w-]+/g, 'bot…')}`); }
+    }
+    res.json({ enabled: v.enabled, chat: v.chat, token_set: !!v.token, tested: !!body.test });
+  });
+
   // Owner: set or clear the prizes-per-day limit of a game round (also for rounds already funded).
   app.post('/api/admin/games/:id/daily-release', admin(c), async (req, res) => {
     const cid = z.coerce.number().int().positive().parse(req.params.id);
