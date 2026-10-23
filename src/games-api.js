@@ -144,18 +144,19 @@ export function gameRoutes(app, db, chain, c, { sendMail, sendTelegram } = {}) {
 
   // Owner: Telegram alerts (bot token is write-only: it is never sent back).
   const telegram = sendTelegram || telegramSender();
-  app.get('/api/admin/telegram', admin(c), async (req, res) => { const s = await telegramSettings(db); res.json({ enabled: !!s.enabled, chat: s.chat || '', token_set: !!s.token }); });
+  app.get('/api/admin/telegram', admin(c), async (req, res) => { const s = await telegramSettings(db); res.json({ enabled: !!s.enabled, chat: s.chat || '', token_set: !!s.token, mode: s.mode || 'digest', per_day: s.per_day || 2 }); });
   app.post('/api/admin/telegram', admin(c), async (req, res) => {
     const body = z.object({ token: z.string().trim().regex(/^\d{5,15}:[A-Za-z0-9_-]{30,60}$/, 'That does not look like a Telegram bot token').optional().or(z.literal('')),
-      chat: z.string().trim().regex(/^(-?\d{5,20}|@[A-Za-z0-9_]{5,32})$/, 'Use the chat id (like -100123…) or @channelname').optional(), enabled: z.boolean(), test: z.boolean().optional() }).strict().parse(req.body || {});
+      chat: z.string().trim().regex(/^(-?\d{5,20}|@[A-Za-z0-9_]{5,32})$/, 'Use the chat id (like -100123…) or @channelname').optional(), enabled: z.boolean(), test: z.boolean().optional(),
+      mode: z.enum(['digest', 'every']).optional(), per_day: z.number().int().min(1).max(3).optional() }).strict().parse(req.body || {});
     const v = await saveTelegram(db, body);
-    await audit(db, req.user.id, 'telegram_settings', 'settings', 'telegram', { enabled: v.enabled, chat: v.chat });
+    await audit(db, req.user.id, 'telegram_settings', 'settings', 'telegram', { enabled: v.enabled, chat: v.chat, mode: v.mode, per_day: v.per_day });
     if (body.test) {
       requireValue(v.token && v.chat, 400, 'Add the bot token and chat first');
       try { await (c.sendTelegram || telegram)(v, '✅ Kadena Nexus Games alerts are connected. New rounds and wins will appear here.'); }
       catch (error) { requireValue(false, 502, `Telegram did not accept the message: ${error.message.replace(/bot\d+:[\w-]+/g, 'bot…')}`); }
     }
-    res.json({ enabled: v.enabled, chat: v.chat, token_set: !!v.token, tested: !!body.test });
+    res.json({ enabled: v.enabled, chat: v.chat, token_set: !!v.token, mode: v.mode, per_day: v.per_day, tested: !!body.test });
   });
 
   // Owner: set or clear the prizes-per-day limit of a game round (also for rounds already funded).
