@@ -550,11 +550,18 @@ test('Daily Challenge, streak bonus, bonus pools and weekly leaderboard', async 
    assert.deepEqual(board.top.map(e => e.moves), [50, 60], 'flagged run is not ranked');
    assert.equal(board.mine.place, 1);
    assert.equal((await players[0].call('/games/challenge/start', {})).status, 409, 'one try per day');
+   // Bonuses need a past paid game win: give u0 and u1 one (paid 30 days ago, outside this week's board).
+   const paidWin = async uid => {
+     const g0 = await t.round('tiles', { title: 'Earlier tiles round for testing ' + uid });
+     const sid0 = (await t.db.query("INSERT INTO submissions(id,campaign_id,user_id,proof_json,public_consent,status) VALUES(gen_random_uuid(),$1,$2,'{}',true,'paid') RETURNING id", [g0, uid])).rows[0].id;
+     await t.db.query("INSERT INTO payouts(submission_id,amount_kda,recipient,status,paid_at) VALUES($1,5,'k:x','confirmed',now()-interval '30 days')", [sid0]);
+   };
+   await paidWin(u0); await paidWin(u1);
    // Fund a challenge bonus pool, then settle "yesterday".
    const pool = await t.round(null, { bonus_kind: 'challenge', reward_kda: '3', max_rewards: 5, title: 'Daily Challenge bonus pool test' });
    assert.ok(!(await t.owner.raw('/tasks')).data.some(x => String(x.id) === String(pool)), 'bonus pools are hidden from the task board');
    await t.db.query("UPDATE challenge_entries SET day=day-1");
-   t.worker.dailyAt = 0; await t.ticks(4);
+   t.worker.dailyAt = 0; t.worker.gamesDaily.streakAt = 0; await t.ticks(4);
    const winners = (await t.db.query('SELECT winners FROM challenge_days')).rows[0].winners;
    assert.equal(winners.length, 2); assert.equal(winners[0].moves, 50); assert.equal(Number(winners[0].bonus_kda), 3);
    const subs = (await t.db.query('SELECT user_id,status,proof_json FROM submissions WHERE campaign_id=$1 ORDER BY user_id', [pool])).rows;
@@ -562,20 +569,35 @@ test('Daily Challenge, streak bonus, bonus pools and weekly leaderboard', async 
    assert.match(subs.find(s => String(s.user_id) === String(u1)).proof_json.result, /#1 in the Daily Challenge/);
    assert.equal((await t.owner.raw('/games/challenge')).data.yesterday.length, 2);
    // Settling twice does nothing.
-   t.worker.dailyAt = 0; await t.ticks(2);
+   t.worker.dailyAt = 0; t.worker.gamesDaily.streakAt = 0; await t.ticks(2);
    assert.equal((await t.db.query('SELECT count(*) n FROM submissions WHERE campaign_id=$1', [pool])).rows[0].n, '2');
    // Streak: 7 days of finished games earns one bonus from the streak pool.
    const streakPool = await t.round(null, { bonus_kind: 'streak', reward_kda: '2', max_rewards: 3, title: 'Streak bonus pool test' });
    const g = await t.round('riddle');
-   for (let d = 0; d < 7; d++) await t.db.query(`INSERT INTO game_sessions(id,campaign_id,user_id,game,puzzle,secret,status,started_at,expires_at,finished_at)
-     VALUES(gen_random_uuid(),$1,$2,'riddle','{}','{}','failed',now()-make_interval(days=>$3),now(),now()-make_interval(days=>$3))`, [g, u0, d]);
+   const day7 = status => Promise.all([...Array(7).keys()].map(d => t.db.query(`INSERT INTO game_sessions(id,campaign_id,user_id,game,puzzle,secret,status,started_at,expires_at,finished_at)
+     VALUES(gen_random_uuid(),$1,$2,'riddle','{}','{}',$4,now()-make_interval(days=>$3),now(),now()-make_interval(days=>$3))`, [g, u0, d, status])));
+   const before = (await players[0].call('/me/streak')).data.current;
+   await day7('failed');
+   assert.equal((await players[0].call('/me/streak')).data.current, before, 'missed tries do not build a streak');
+   await day7('solved');
    const st = (await players[0].call('/me/streak')).data;
    assert.equal(st.current, 7); assert.equal(st.goal, 7); assert.equal(Number(st.pool.reward), 2);
-   t.worker.dailyAt = 0; await t.ticks(4);
+   t.worker.dailyAt = 0; t.worker.gamesDaily.streakAt = 0; await t.ticks(4);
    const sb = (await t.db.query('SELECT status,proof_json FROM submissions WHERE campaign_id=$1', [streakPool])).rows;
    assert.equal(sb.length, 1); assert.match(sb[0].proof_json.result, /7 days in a row/);
-   t.worker.dailyAt = 0; await t.ticks(2);
+   t.worker.dailyAt = 0; t.worker.gamesDaily.streakAt = 0; await t.ticks(2);
    assert.equal((await t.db.query('SELECT count(*) n FROM submissions WHERE campaign_id=$1', [streakPool])).rows[0].n, '1', 'one bonus per wallet per pool');
+   // Bonus proofs are written by the server only: no changes round, no task submit, pools stay hidden.
+   const anyBonus = (await t.db.query("SELECT id FROM submissions WHERE campaign_id=$1 AND status='in_review' LIMIT 1", [pool])).rows[0].id;
+   assert.equal((await t.owner.call('/submissions/' + anyBonus + '/request-changes', { note: 'Please add more detail' })).status, 409);
+   assert.equal((await players[0].call('/tasks/' + pool + '/submit', { proof: { result: 'fake' }, public_consent: true })).status, 409);
+   assert.equal((await t.owner.call('/admin/campaigns/' + pool + '/visibility', { hidden: false })).status, 409);
+   // A wallet with no paid game win gets no bonus, even at the top of the board.
+   const fresh = await client(t.base, testKey()); await fresh.call('/games/challenge/start', {});
+   const fu = (await t.db.query('SELECT max(user_id) id FROM challenge_entries')).rows[0].id;
+   await t.db.query("UPDATE challenge_entries SET day=day-2, finished_at=now(), moves=10, seconds=60, flags='[]' WHERE user_id=$1", [fu]);
+   t.worker.dailyAt = 0; t.worker.gamesDaily.streakAt = 0; await t.ticks(2);
+   assert.equal((await t.db.query('SELECT count(*) n FROM submissions WHERE user_id=$1', [fu])).rows[0].n, '0');
    // The AI agent never reviews bonuses; the owner approves, and the paid bonus counts on the weekly board.
    const sid = (await t.db.query('SELECT id FROM submissions WHERE campaign_id=$1 AND user_id=$2', [pool, u1])).rows[0].id;
    assert.equal((await t.db.query('SELECT count(*) n FROM ai_reviews WHERE submission_id=$1', [sid])).rows[0].n, '0');

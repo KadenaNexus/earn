@@ -102,6 +102,7 @@ export function apiRoutes(app,db,chain,c,worker) {
      requireValue(row?.status==='open'&&Date.parse(row.deadline)>Date.now(),409,'Campaign is not accepting work');
      requireValue(!row.hidden,409,'This task is no longer accepting new contributors');
      requireValue(!row.game,409,'Play this round from the Games page');
+     requireValue(!row.bonus_kind,409,'Bonus prizes are awarded by Kadena Nexus Games');
      const mine=(await tx.query('SELECT s.status FROM submissions s WHERE campaign_id=$1 AND user_id=$2',[cid,req.user.id])).rows[0];
      requireValue(!mine||mine.status==='reservation_failed',409,'You already submitted this task');
      const existing=(await tx.query('SELECT * FROM task_starts WHERE campaign_id=$1 AND user_id=$2',[cid,req.user.id])).rows[0];
@@ -120,6 +121,7 @@ export function apiRoutes(app,db,chain,c,worker) {
      const campaign=(await tx.query('SELECT * FROM task_campaigns WHERE id=$1 FOR UPDATE',[cid])).rows[0];requireValue(campaign,404,'Task not found');
      // Game proof is written by the server when a round is won, never typed in.
      requireValue(!campaign.game,409,'Game rounds are checked and submitted by the game itself');
+     requireValue(!campaign.bonus_kind,409,'Bonus prizes are awarded by Kadena Nexus Games');
      const input=proofData(campaign.proof_schema,req.body);
      const existing=(await tx.query('SELECT * FROM submissions WHERE campaign_id=$1 AND user_id=$2 FOR UPDATE',[cid,req.user.id])).rows[0];
      if(existing?.status==='changes_requested') {
@@ -147,6 +149,7 @@ export function apiRoutes(app,db,chain,c,worker) {
      const s=(await tx.query('SELECT * FROM submissions WHERE id=$1 FOR UPDATE',[sid])).rows[0];
      requireValue(s&&['in_review','changes_requested'].includes(s.status),409,'Submission is no longer awaiting a decision');
      requireValue(action!=='approve'||s.status==='in_review',409,'Contributor must resubmit the requested changes');
+     if(action==='request-changes'){const k=(await tx.query('SELECT game,bonus_kind FROM task_campaigns WHERE id=$1',[s.campaign_id])).rows[0];requireValue(!k.game&&!k.bonus_kind,409,'Game wins and bonuses cannot be sent back for changes: approve or reject');}
      const camp=(await tx.query('SELECT * FROM task_campaigns WHERE id=$1',[s.campaign_id])).rows[0];
      if(action==='approve') {
        const user=(await tx.query('SELECT * FROM users WHERE id=$1',[s.user_id])).rows[0];
@@ -217,6 +220,7 @@ export function apiRoutes(app,db,chain,c,worker) {
  app.post('/api/admin/campaigns/:id/visibility',owner,async(req,res)=>{
    const cid=id(req.params.id);const {hidden}=z.object({hidden:z.boolean()}).strict().parse(req.body||{});
    res.json(await db.tx(async tx=>{
+     if(!hidden)requireValue(!(await tx.query('SELECT 1 FROM task_campaigns WHERE id=$1 AND bonus_kind IS NOT NULL',[cid])).rowCount,409,'Bonus pools stay hidden: they are awarded by Kadena Nexus Games');
      const row=(await tx.query('UPDATE task_campaigns SET hidden=$2,updated_at=now() WHERE id=$1 RETURNING id,hidden',[cid,hidden])).rows[0];
      requireValue(row,404,'Campaign not found');
      await audit(tx,req.user.id,hidden?'hide':'unhide','campaign',cid);return row;
