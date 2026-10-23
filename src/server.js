@@ -24,7 +24,7 @@ export function createApp(db,chain,c,worker=new Worker(db,chain,c)) {
  app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'"],styleSrc:["'self'","'unsafe-inline'","https://fonts.googleapis.com"],fontSrc:["'self'","https://fonts.gstatic.com"],imgSrc:["'self'","data:"],connectSrc:["'self'",'wss://relay.walletconnect.org','wss://relay.walletconnect.com','https://*.walletconnect.org','https://*.walletconnect.com'],frameSrc:['https://verify.walletconnect.org','https://verify.walletconnect.com'],objectSrc:["'none'"],frameAncestors:["'none'"],upgradeInsecureRequests:c.production?[]:null}},strictTransportSecurity:c.production?undefined:false}));
  // Question-bank uploads (owner only) may be larger than other requests.
  const bigJson=express.json({limit:'2mb'}),smallJson=express.json({limit:'128kb'});
- app.use((req,res,next)=>(req.path==='/api/admin/games/content'?bigJson:smallJson)(req,res,next));app.use(cookieParser());
+ app.use((req,res,next)=>(req.path==='/api/admin/games/content'&&/(?:^|;\s*)ke_session=/.test(req.get('cookie')||'')?bigJson:smallJson)(req,res,next));app.use(cookieParser());
  app.use('/api',(req,res,next)=>{res.set('Cache-Control','no-store');next();});
  app.use('/api',rateLimit({windowMs:60000,limit:300,standardHeaders:'draft-8',legacyHeaders:false}));
  app.use('/api/auth',rateLimit({windowMs:60000,limit:20,standardHeaders:'draft-8',legacyHeaders:false}));
