@@ -22,6 +22,7 @@ const ICON = {
   quiz: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14"/><circle cx="12" cy="17.5" r=".6" fill="currentColor"/></svg>',
   logic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M12 3v18"/></svg>',
   riddle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></svg>',
+  k2048: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8.5 9.5 12 7l3.5 2.5M8.5 14.5 12 17l3.5-2.5M12 7v10"/></svg>',
 };
 const ROBOT = '<svg class="ai-bot" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false"><path d="M12 2.5v3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="2.6" r="1.6" fill="currentColor"/><rect x="3.5" y="6.5" width="17" height="13" rx="4" fill="currentColor"/><circle class="ai-bot-face" cx="9" cy="12.2" r="1.9"/><circle class="ai-bot-face" cx="15" cy="12.2" r="1.9"/><path class="ai-bot-mouth" d="M9.2 16.2h5.6" stroke-width="1.6" stroke-linecap="round"/><path d="M1.8 11v4M22.2 11v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
 const txLink = key => key && /^[\w-]{43}$/.test(key) ? `<a href="/transactions/${encodeURIComponent(key)}?chain=1" target="_blank" rel="noopener noreferrer">Transaction ${esc(short(key))}</a>` : '';
@@ -125,7 +126,7 @@ function renderLobby() {
   $('#rulesLine').textContent = `${total >= d.games.length ? 'One win per game per day' : `One win per game, ${total} wins a day`} · ${rules.attempts} tries per round${rules.email_required ? ' · confirmed email needed' : ''}`;
   renderEmail(); renderOwner();
   $('#rounds').innerHTML = d.rounds.length ? d.rounds.map(r => `<article class="game-card">
-      <div class="gc-top"><span class="gc-icon">${ICON[r.game]}</span><div><h3>${esc(r.game_name)}</h3><span class="kda">${fmt(r.reward)}</span></div></div>
+      <div class="gc-top"><span class="gc-icon">${ICON[r.game]}</span><div><h3>${esc(r.game_name)}${r.difficulty === 'expert' ? ' <span class="badge expert">Expert</span>' : ''}</h3><span class="kda">${fmt(r.reward)}</span></div></div>
       <p>${esc(r.title)}</p>
       <div class="meta"><span>${prizeLine(r)}</span><span>Ends in ${endsIn(r.deadline)}</span><span>${r.minutes} min per try</span></div>
       ${liveLine(d.live?.[r.game])}
@@ -157,6 +158,7 @@ function renderOwner() {
       <div class="field"><label for="oGame">Game</label><select id="oGame">${state.data.games.map(g => `<option value="${g.id}">${esc(g.name)}</option>`).join('')}</select></div>
       <div class="field"><label for="oReward">Prize per win (KDA)</label><input id="oReward" type="number" min="0.1" step="0.1" value="5"></div>
       <div class="field"><label for="oCount">Number of prizes</label><input id="oCount" type="number" min="1" max="1000" value="30"></div>
+      <div class="field"><label for="oLevel">Difficulty</label><select id="oLevel"><option value="normal">Normal</option><option value="expert">Expert (harder, bigger prize)</option></select></div>
       <div class="field"><label for="oDaily">Prizes per day</label><input id="oDaily" type="number" min="1" max="1000" value="5" placeholder="All at once"></div>
       <div class="field"><label for="oDays">Open for (days)</label><input id="oDays" type="number" min="1" max="60" value="10"></div>
       <button class="btn" id="oGo">Fund round</button>
@@ -260,8 +262,9 @@ async function fundBonus() {
 async function openRound(game, reward, { quiet = false } = {}) {
   const g = state.data.games.find(x => x.id === game);
   const day = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  const body = { title: `${g.name} round – ${day}`, summary: `${g.blurb} Win KDA paid from escrow by the AI agent.`, sponsor_name: 'Kadena Nexus Games', category: 'Games', template: 'Game',
-    reward_kda: reward, max_rewards: Number($('#oCount').value), minutes_estimate: g.minutes, ...(Number($('#oDaily').value) ? { daily_release: Number($('#oDaily').value) } : {}),
+  const expert = !quiet && $('#oLevel').value === 'expert';
+  const body = { title: `${g.name}${expert ? ' Expert' : ''} round – ${day}`, summary: `${g.blurb} Win KDA paid from escrow by the AI agent.`, sponsor_name: 'Kadena Nexus Games', category: 'Games', template: 'Game',
+    reward_kda: reward, max_rewards: Number($('#oCount').value), minutes_estimate: g.minutes, ...(Number($('#oDaily').value) ? { daily_release: Number($('#oDaily').value) } : {}), ...(quiet ? {} : { difficulty: $('#oLevel').value }),
     deadline: new Date(Date.now() + Number($('#oDays').value) * 86400000).toISOString(), steps: ['Play'], proof_schema: [{ key: 'result', label: 'Game result', type: 'text' }], game, featured: false, ai_review: true };
   wallet ||= restoreWallet(); const connected = await wallet.connect(state.config.network);
   if (connected !== state.user.account) throw new Error('Select the signed-in owner account in your wallet.');
@@ -306,12 +309,12 @@ function begin(st) {
   const since = st.session?.started_at ? Math.max(0, Date.now() - Date.parse(st.session.started_at)) : 0;
   state.stage = { ...st, t0: performance.now() - since, done: false };
   const name = state.data.games.find(g => g.id === st.game).name;
-  const pills = st.mode === 'challenge' ? '<span class="g-pill" id="gClock"></span><span class="g-pill">Daily Challenge</span><span class="g-pill">Same board for everyone · fewest moves wins</span>' : `<span class="g-pill" id="gClock"></span>${st.mode === 'paid' ? `<span class="g-pill">Prize ${fmt(st.round?.reward)} KDA</span><span class="g-pill">${st.session.attempts_left} more ${st.session.attempts_left === 1 ? 'try' : 'tries'} after this</span>` : '<span class="g-pill">Practice</span>'}`;
+  const pills = st.mode === 'challenge' ? '<span class="g-pill" id="gClock"></span><span class="g-pill">Daily Challenge</span><span class="g-pill">Same board for everyone · fewest moves wins</span>' : `<span class="g-pill" id="gClock"></span>${st.mode === 'paid' ? `<span class="g-pill">Prize ${fmt(st.round?.reward)} KDA</span>${st.puzzle?.expert ? '<span class="g-pill expert">Expert</span>' : ''}<span class="g-pill">${st.session.attempts_left} more ${st.session.attempts_left === 1 ? 'try' : 'tries'} after this</span>` : '<span class="g-pill">Practice</span>'}`;
   openStage(bar(name, pills) + '<p class="g-live" id="gLive" aria-live="polite"></p><div id="gBoard"></div>');
   if (st.mode !== 'challenge') pollLive(st.game); else $('#gLive').remove();
-  $('#gClose').onclick = () => { if (state.stage?.mode === 'paid' && !state.stage.done && !confirm(['word', 'memory', 'mines'].includes(state.stage.game) ? 'Leave this puzzle? Your timer keeps running, and you can resume it from the games list.' : 'Leave this puzzle? Your timer keeps running. If you resume, this puzzle starts again from the beginning.')) return; closeStage(); };
+  $('#gClose').onclick = () => { if (state.stage?.mode === 'paid' && !state.stage.done && !confirm(['word', 'memory', 'mines', 'k2048'].includes(state.stage.game) ? 'Leave this puzzle? Your timer keeps running, and you can resume it from the games list.' : 'Leave this puzzle? Your timer keeps running. If you resume, this puzzle starts again from the beginning.')) return; closeStage(); };
   startClock($('#gClock'), st.mode, st.session?.expires_at);
-  ({ tiles: renderTiles, logic: renderLogic, quiz: renderQuiz, riddle: renderRiddle, word: renderWord, memory: renderMemory, mines: renderMines, pactbug: renderPactbug })[st.game]();
+  ({ tiles: renderTiles, logic: renderLogic, quiz: renderQuiz, riddle: renderRiddle, word: renderWord, memory: renderMemory, mines: renderMines, pactbug: renderPactbug, k2048: renderK2048 })[st.game]();
 }
 
 // Sliding tiles
@@ -510,6 +513,34 @@ function renderMines() {
   if (Object.keys(st.cells).length === MINES.w * MINES.h - (st.puzzle.n || MINES.n)) finish();
 }
 
+// Kadena 2048: every swipe goes to the server, which slides, merges and adds the new tile.
+function renderK2048() {
+  const st = state.stage, saved = st.session?.state;
+  st.board = saved?.board || Array(16).fill(0); st.score = saved?.score || 0; st.busy = false;
+  const target = st.puzzle.target;
+  const draw = () => {
+    const best = Math.max(...st.board);
+    $('#gBoard').innerHTML = `<p class="g-help">Swipe, or use the arrow keys. Equal tiles merge. Build a <b>${target}</b> tile to win. Score: <b>${st.score}</b> · Best tile: <b>${best}</b></p>
+      <div class="k2048" role="grid" aria-label="2048 board">${st.board.map(v => `<div class="t v${Math.min(v, 4096)}">${v ? (v >= target ? 'K ' + v : v) : ''}</div>`).join('')}</div>
+      <div class="k2048-pad" aria-label="Move"><button data-dir="up" aria-label="Up">▲</button><div><button data-dir="left" aria-label="Left">◀</button><button data-dir="down" aria-label="Down">▼</button><button data-dir="right" aria-label="Right">▶</button></div></div>`;
+    $$('.k2048-pad [data-dir]').forEach(b => b.onclick = () => go(b.dataset.dir));
+  };
+  const go = async dir => {
+    if (st.busy || st.done) return; st.busy = true;
+    const r = await sendMove({ dir }); st.busy = false;
+    if (!r || r.error) return;
+    st.board = r.board; st.score = r.score; draw();
+    if (r.solved) finish();
+  };
+  draw();
+  document.onkeydown = e => { const d = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' }[e.key]; if (d) { e.preventDefault(); go(d); } };
+  let sx = 0, sy = 0;
+  const board = $('#gBoard');
+  board.ontouchstart = e => { const t = e.touches[0]; sx = t.clientX; sy = t.clientY; };
+  board.ontouchend = e => { const t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy; if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) return; go(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up')); };
+  if (Math.max(...st.board) >= target) finish();
+}
+
 // Spot the Pact Bug
 function renderPactbug() {
   const st = state.stage;
@@ -524,7 +555,7 @@ function renderPactbug() {
 function playData() {
   const st = state.stage;
   if (st.game === 'pactbug') { const c = document.querySelector('input[name=bug]:checked'); return { choice: c ? Number(c.value) : -1, written: $('#gWritten').value }; }
-  if (['word', 'memory', 'mines'].includes(st.game)) return {};
+  if (['word', 'memory', 'mines', 'k2048'].includes(st.game)) return {};
   if (st.game === 'tiles') return { moves: st.moves, times: st.times };
   if (st.game === 'logic') return { grid: st.grid, entries: st.entries };
   if (st.game === 'quiz') return { choices: st.puzzle.questions.map((_, i) => { const c = document.querySelector(`input[name=q${i}]:checked`); return c ? Number(c.value) : -1; }), written: $('#gWritten').value };

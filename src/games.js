@@ -2,13 +2,13 @@
 // finished play. The browser never sees answers, and a win is decided here,
 // from server timestamps, before the AI agent reviews how it was played.
 import { randomInt } from 'node:crypto';
-import { tilesGenerate, tilesCheck, logicGenerate, logicCheck, intervalStats, answerMatches, wordScore, WORD_TRIES, memoryGenerate, memoryFlip, MINES, minesPlace, minesReveal, minesAround } from '../public/games-core.js';
+import { tilesGenerate, tilesCheck, logicGenerate, logicCheck, intervalStats, answerMatches, wordScore, WORD_TRIES, memoryGenerate, memoryFlip, MINES, minesPlace, minesReveal, minesAround, K2048, k2048New, k2048Slide, k2048Spawn, k2048CanMove } from '../public/games-core.js';
 import { RIDDLES, PACT_BUGS } from './game-content.js';
 import { BUILT_IN, pickFresh, itemKey } from './game-bank.js';
 
-export const GAME_KINDS = ['tiles', 'quiz', 'logic', 'riddle', 'word', 'memory', 'mines', 'pactbug'];
+export const GAME_KINDS = ['tiles', 'quiz', 'logic', 'riddle', 'word', 'memory', 'mines', 'pactbug', 'k2048'];
 // Games played move by move against the server, which keeps the hidden part.
-export const INTERACTIVE = ['word', 'memory', 'mines'];
+export const INTERACTIVE = ['word', 'memory', 'mines', 'k2048'];
 export const GAMES = {
   tiles: { name: 'Sliding Tiles', blurb: 'Slide the numbered tiles back into order, 1 to 15.', minSeconds: 15, minutes: 15 },
   quiz: { name: 'Kadena Quiz', blurb: 'Five questions about Kadena and one short answer in your own words.', minSeconds: 30, minutes: 15 },
@@ -18,6 +18,7 @@ export const GAMES = {
   memory: { name: 'Memory Match', blurb: 'Flip cards two at a time and find all 8 pairs.', minSeconds: 20, minutes: 10 },
   mines: { name: 'Minesweeper', blurb: 'Open every safe square on an 8×8 board without hitting one of the 8 mines.', minSeconds: 25, minutes: 15 },
   pactbug: { name: 'Spot the Pact Bug', blurb: 'Find the security mistake in a short Pact contract and explain it.', minSeconds: 30, minutes: 15 },
+  k2048: { name: 'Kadena 2048', blurb: 'Slide and merge the tiles until you build a 512 tile. Every move is played on the server.', minSeconds: 60, minutes: 15 },
 };
 export const QUIZ_QUESTIONS = 5, QUIZ_PASS = 4, RIDDLE_COUNT = 3;
 
@@ -31,14 +32,18 @@ function pick(list, n, rand) {
 // Returns { puzzle } for the player and { secret } kept on the server, plus the
 // content keys used (so the same wallet is not shown them again soon).
 // banks: the question banks to draw from; seen: Map of content key -> last seen time.
-export function newRound(game, rand = secureRand, banks = BUILT_IN, seen = new Map()) {
-  const r = buildRound(game, rand, banks, seen);
+// Expert rounds: harder puzzles (fewer logic clues, a longer tile scramble, 10 mines, 5 word tries, 5 of 5 in the quiz, 1024 in 2048).
+export const EXPERT = { logicClues: 10, tileSteps: 150, mines: 10, wordTries: 5, quizPass: 5, k2048: 1024, minutes: { k2048: 30 } };
+export const roundMinutes = (game, difficulty) => (difficulty === 'expert' && EXPERT.minutes[game]) || GAMES[game].minutes;
+export function newRound(game, rand = secureRand, banks = BUILT_IN, seen = new Map(), difficulty = 'normal') {
+  const r = buildRound(game, rand, banks, seen, difficulty === 'expert');
+  if (difficulty === 'expert') { r.puzzle = { ...r.puzzle, expert: true }; r.secret = { ...r.secret, expert: true }; }
   return { ...r, keys: r.keys || [] };
 }
-function buildRound(game, rand, banks, seen) {
+function buildRound(game, rand, banks, seen, expert = false) {
   const { quiz: QUIZ, written: WRITTEN, riddles: RIDDLES_BANK, words: WORDS, pactbugs: BUGS } = banks;
-  if (game === 'tiles') return { puzzle: tilesGenerate(rand), secret: {} };
-  if (game === 'logic') { const { puzzle, solution } = logicGenerate(rand); return { puzzle, secret: { solution } }; }
+  if (game === 'tiles') return { puzzle: tilesGenerate(rand, expert ? { steps: EXPERT.tileSteps } : undefined), secret: {} };
+  if (game === 'logic') { const { puzzle, solution } = logicGenerate(rand, expert ? { clues: EXPERT.logicClues } : undefined); return { puzzle, secret: { solution } }; }
   if (game === 'quiz') {
     const ids = pickFresh(QUIZ, QUIZ_QUESTIONS, rand, seen);
     const questions = [], answers = [];
@@ -54,9 +59,10 @@ function buildRound(game, rand, banks, seen) {
     const items = pickFresh(RIDDLES_BANK, RIDDLE_COUNT, rand, seen).map(i => RIDDLES_BANK[i]);
     return { puzzle: { riddles: items.map(x => ({ q: x.q })) }, secret: { items }, keys: items.map(itemKey) };
   }
-  if (game === 'word') { const word = WORDS[pickFresh(WORDS, 1, rand, seen)[0]]; return { puzzle: { letters: 5, tries: WORD_TRIES }, secret: { word }, state: { guesses: [], times: [] }, keys: [itemKey(word)] }; }
+  if (game === 'word') { const word = WORDS[pickFresh(WORDS, 1, rand, seen)[0]]; const tries = expert ? EXPERT.wordTries : WORD_TRIES; return { puzzle: { letters: 5, tries }, secret: { word, tries }, state: { guesses: [], times: [] }, keys: [itemKey(word)] }; }
   if (game === 'memory') return { puzzle: { cards: 16, columns: 4 }, secret: { cards: memoryGenerate(rand) }, state: { flips: 0, matched: [], times: [] } };
-  if (game === 'mines') return { puzzle: { ...MINES }, secret: { mines: null }, state: { revealed: [], moves: 0, times: [] } };
+  if (game === 'mines') { const n = expert ? EXPERT.mines : MINES.n; return { puzzle: { ...MINES, n }, secret: { mines: null, n }, state: { revealed: [], moves: 0, times: [] } }; }
+  if (game === 'k2048') { const target = expert ? EXPERT.k2048 : K2048.target; return { puzzle: { size: K2048.size, target }, secret: { target }, state: { board: k2048New(rand), score: 0, moves: 0, times: [] } }; }
   if (game === 'pactbug') {
     const b = BUGS[pickFresh(BUGS, 1, rand, seen)[0]];
     const order = pick(b.o, b.o.length, rand);
@@ -69,6 +75,7 @@ function buildRound(game, rand, banks, seen) {
 export function publicState(game, secret, state) {
   if (!state) return null;
   if (game === 'word') return { guesses: state.guesses };
+  if (game === 'k2048') return { board: state.board, score: state.score, moves: state.moves };
   if (game === 'memory') return { flips: state.flips, matched: state.matched.map(i => [i, secret.cards[i]]), open: Number.isInteger(state.open) ? [state.open, secret.cards[state.open]] : null };
   if (game === 'mines') {
     const set = new Set(secret.mines || []);
@@ -85,10 +92,11 @@ export function moveRound(game, secret, state, move, rand = secureRand) {
   if (game === 'word') {
     const guess = String(move?.guess || '').toLowerCase();
     if (!/^[a-z]{5}$/.test(guess)) return { error: 'Type a 5-letter word' };
-    if (state.guesses.length >= WORD_TRIES || state.guesses.at(-1)?.g === secret.word) return { error: 'This round is over' };
+    const tries = secret.tries || WORD_TRIES;
+    if (state.guesses.length >= tries || state.guesses.at(-1)?.g === secret.word) return { error: 'This round is over' };
     const score = wordScore(guess, secret.word);
     state.guesses.push({ g: guess, score }); stamp();
-    const solved = guess === secret.word, lost = !solved && state.guesses.length >= WORD_TRIES;
+    const solved = guess === secret.word, lost = !solved && state.guesses.length >= tries;
     return { score, solved, lost };
   }
   if (game === 'memory') {
@@ -105,10 +113,21 @@ export function moveRound(game, secret, state, move, rand = secureRand) {
     const i = Number(move?.cell);
     if (!Number.isInteger(i) || i < 0 || i >= MINES.w * MINES.h) return { error: 'Invalid square' };
     if (state.revealed.includes(i)) return { opened: [], solved: false };
-    if (!secret.mines) secret.mines = minesPlace(rand, i);
+    if (!secret.mines) secret.mines = minesPlace(rand, i, { ...MINES, n: secret.n || MINES.n });
     state.moves++; stamp();
     const r = minesReveal(secret.mines, state.revealed, i);
     return r.boom ? { lost: true, mines: secret.mines } : r;
+  }
+  if (game === 'k2048') {
+    const dir = String(move?.dir || '');
+    if (!['up', 'down', 'left', 'right'].includes(dir)) return { error: 'Swipe up, down, left or right' };
+    if (state.moves >= 5000) return { error: 'Too many moves in this round' };
+    if (Math.max(...state.board) >= secret.target) return { error: 'This round is already won' };
+    const r = k2048Slide(state.board, dir);
+    if (!r.moved) return { board: state.board, score: state.score, moved: false };
+    state.board = k2048Spawn(r.board, rand); state.score += r.gained; state.moves++; stamp();
+    const solved = Math.max(...state.board) >= secret.target;
+    return { board: state.board, score: state.score, moved: true, solved, lost: !solved && !k2048CanMove(state.board) };
   }
   return { error: 'This game has no moves' };
 }
@@ -147,7 +166,8 @@ export function checkRound(game, puzzle, secret, play, seconds, state = null) {
     const choices = Array.isArray(play.choices) ? play.choices.slice(0, QUIZ_QUESTIONS) : [];
     const correct = secret.answers.filter((a, i) => choices[i] === a).length;
     const written = str(play.written, 1200).trim();
-    if (correct < QUIZ_PASS) return { solved: false, message: `${correct} of ${QUIZ_QUESTIONS} correct. You need ${QUIZ_PASS} to pass.` };
+    const pass = secret.expert ? EXPERT.quizPass : QUIZ_PASS;
+    if (correct < pass) return { solved: false, message: `${correct} of ${QUIZ_QUESTIONS} correct. You need ${pass} to pass${secret.expert ? ' an Expert round' : ''}.` };
     if (written.length < 20) return { solved: false, message: `${correct} of ${QUIZ_QUESTIONS} correct. Write at least a sentence for the last question.` };
     return { solved: true, summary: `Passed the Kadena Quiz: ${correct} of ${QUIZ_QUESTIONS} correct, plus a written answer.`,
       review: { game: 'Kadena Quiz', seconds: Math.round(seconds), correct: `${correct} of ${QUIZ_QUESTIONS}`, written_question: secret.written.q,
@@ -184,6 +204,13 @@ export function checkRound(game, puzzle, secret, play, seconds, state = null) {
     if (timing && state.moves >= 8 && timing.median_ms < 200) flags.push(`machine-like click timing (median ${timing.median_ms} ms)`);
     return { solved: true, summary: `Cleared the 8×8 Minesweeper board in ${clock(seconds)}.`,
       review: { game: `Minesweeper (8×8, ${secret.mines.length} mines)`, seconds: Math.round(seconds), clicks: state.moves, click_timing: timing }, flags };
+  }
+  if (game === 'k2048') {
+    const best = Math.max(...(state?.board || [0]));
+    if (best < secret.target) return { solved: false, message: `Build a ${secret.target} tile to win.` };
+    if (timing && state.moves >= 50 && (timing.median_ms < 150 || timing.sd_ms < 40)) flags.push(`machine-like swipe timing (median ${timing.median_ms} ms, spread ${timing.sd_ms} ms)`);
+    return { solved: true, summary: `Built a ${best} tile in Kadena 2048 in ${clock(seconds)} with ${state.moves} moves.`,
+      review: { game: `Kadena 2048 (target ${secret.target})`, seconds: Math.round(seconds), moves: state.moves, score: state.score, best_tile: best, swipe_timing: timing }, flags };
   }
   if (game === 'pactbug') {
     const choice = Number(play.choice), written = str(play.written, 1200).trim(), b = secret.bug || PACT_BUGS[secret.id];
