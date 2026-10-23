@@ -38,12 +38,13 @@ function seeded(secret, day) {
 export const challengeRand = (c, day) => seeded(c.opsSecret, day);
 export const challengeBoard = (c, day) => tilesGenerate(challengeRand(c, day), { steps: 80 });
 
-// Days (UTC) on which a wallet finished at least one game or the Daily Challenge.
+// Days (UTC) on which a wallet won a game (a solved round) or solved the Daily Challenge cleanly.
+// Missed, expired or flagged tries do not count, so a streak cannot be built by losing on purpose.
 async function activeDays(db, uid, since = 60) {
   // Dates come back as text so the server's own time zone can never shift a day.
   const rows = (await db.query(`SELECT DISTINCT d::text AS d FROM (
-      SELECT (finished_at AT TIME ZONE 'UTC')::date d FROM game_sessions WHERE user_id=$1 AND finished_at>now()-make_interval(days=>$2::int)
-      UNION SELECT day FROM challenge_entries WHERE user_id=$1 AND finished_at IS NOT NULL AND day>(now() AT TIME ZONE 'UTC')::date-$2::int) x`, [uid, since])).rows;
+      SELECT (finished_at AT TIME ZONE 'UTC')::date d FROM game_sessions WHERE user_id=$1 AND status='solved' AND finished_at>now()-make_interval(days=>$2::int)
+      UNION SELECT day FROM challenge_entries WHERE user_id=$1 AND moves IS NOT NULL AND coalesce(jsonb_array_length(flags),0)=0 AND day>(now() AT TIME ZONE 'UTC')::date-$2::int) x`, [uid, since])).rows;
   return new Set(rows.map(r => r.d));
 }
 // Current streak counts back from today, or from yesterday if today is not played yet.
@@ -52,6 +53,14 @@ export async function streakOf(db, uid) {
   let day = days.has(today) ? today : addDays(today, -1), n = 0;
   while (days.has(day)) { n++; day = addDays(day, -1); }
   return { current: n, played_today: days.has(today) };
+}
+
+// Bonuses go only to wallets with at least one paid game win (reviewed and paid from escrow),
+// and a confirmed email when the server requires one: free throwaway wallets cannot farm bonus pools.
+async function eligible(tx, c, uid) {
+  const r = (await tx.query(`SELECT u.email_verified_at, EXISTS (SELECT 1 FROM submissions s JOIN task_campaigns k ON k.id=s.campaign_id JOIN payouts p ON p.submission_id=s.id
+      WHERE s.user_id=u.id AND k.game IS NOT NULL AND p.status='confirmed') AS won FROM users u WHERE u.id=$1`, [uid])).rows[0];
+  return !!r?.won && (!c.games?.requireEmail || !!r.email_verified_at);
 }
 
 async function openPool(tx, kind) {
@@ -85,8 +94,12 @@ export class GamesDaily {
   async run() {
     if (!this.c.writes || !this.c.module) return { days: 0, streaks: 0 };
     let days = 0, streaks = 0;
+    // Reservations queued while payouts are paused simply wait (the worker does not send them), so this
+    // does not take the pause-row lock that every play request uses; one runner at a time via an advisory lock.
+    if ((await pauseState(this.db)).paused) return { days: 0, streaks: 0 };
+    const scanStreaks = Date.now() - (this.streakAt || 0) >= 10 * 60000;
+    if (scanStreaks) this.streakAt = Date.now();
     await this.db.tx(async tx => {
-      if ((await pauseState(tx, { lock: true })).paused) return;
       await tx.query('SELECT pg_advisory_xact_lock(827127)');
       const today = utcDay();
       // Challenge days that have ended and are not settled yet (last 7 days).
@@ -98,6 +111,7 @@ export class GamesDaily {
         let place = 0;
         for (const e of ranked) {
           if (place >= PLACES) break;
+          if (!(await eligible(tx, this.c, e.user_id))) continue;
           place++;
           const entry = { place, who: short(e.kadena_account), moves: e.moves, seconds: Math.round(e.seconds) };
           if (pool && pool.left > 0) {
@@ -112,7 +126,7 @@ export class GamesDaily {
         days++;
       }
       // Streak bonuses: wallets active yesterday or today with a streak of 7+ and no bonus from the open pool yet.
-      const pool = await openPool(tx, 'streak');
+      const pool = scanStreaks ? await openPool(tx, 'streak') : null;
       if (pool) {
         const users = (await tx.query(`SELECT DISTINCT u.id,u.kadena_account FROM users u WHERE u.id IN (
             SELECT user_id FROM game_sessions WHERE finished_at>now()-interval '2 days'
@@ -121,7 +135,7 @@ export class GamesDaily {
         for (const u of users) {
           if (pool.left < 1) break;
           const s = await streakOf(tx, u.id);
-          if (s.current < STREAK_DAYS) continue;
+          if (s.current < STREAK_DAYS || !(await eligible(tx, this.c, u.id))) continue;
           if (await reserveBonus(tx, this.chain, this.c, pool, u, `Played Kadena Nexus Games ${s.current} days in a row.`, { bonus: 'streak', days: s.current })) { pool.left--; streaks++; }
         }
       }
@@ -173,10 +187,11 @@ export function extraRoutes(app, db, chain, c) {
     assertWrites();
     const { play } = z.object({ play: z.record(z.string(), z.unknown()) }).strict().parse(req.body || {});
     res.json(await db.tx(async tx => {
-      const today = utcDay();
-      const e = (await tx.query('SELECT *,extract(epoch FROM now()-started_at)::float AS secs FROM challenge_entries WHERE day=$1 AND user_id=$2 FOR UPDATE', [today, req.user.id])).rows[0];
+      // The entry is found by start time, not today's date, so a try started just before 00:00 UTC still counts for its own day.
+      const e = (await tx.query(`SELECT *,day::text AS dayk,extract(epoch FROM now()-started_at)::float AS secs FROM challenge_entries
+        WHERE user_id=$1 AND finished_at IS NULL AND started_at>now()-make_interval(mins=>$2::int) ORDER BY started_at DESC LIMIT 1 FOR UPDATE`, [req.user.id, CHALLENGE_MINUTES + 1])).rows[0];
       requireValue(e, 404, "Start today's challenge first");
-      requireValue(!e.finished_at, 409, "You already played today's challenge");
+      const today = e.dayk;
       if (e.secs > CHALLENGE_MINUTES * 60) {
         await tx.query('UPDATE challenge_entries SET finished_at=now() WHERE day=$1 AND user_id=$2', [today, req.user.id]);
         return { solved: false, message: 'Time ran out for today\'s challenge.' };

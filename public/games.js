@@ -619,6 +619,8 @@ async function finishChallenge(st) {
   let r;
   try { r = await api('/games/challenge/finish', { play: playData() }); }
   catch (e) { st.done = false; notify(e.message); return; }
+  // Not solved yet (for example the browser clock ran a moment ahead of the server): keep the board open.
+  if (!r.solved && r.retry) { st.done = false; notify(r.message); return; }
   if (r.solved) coinBurst();
   openStage(`<div class="g-result"><h3>${r.solved ? (r.place ? `You're ${ord(r.place)} today` : 'Solved!') : 'Not this time'}</h3>
     <p>${r.solved ? `${r.moves} moves in ${clock(r.seconds * 1000)}.${r.flagged ? ' This run looked automated, so it is not ranked.' : ' The top 3 at 03:00 Riyadh (00:00 UTC) win the bonus.'}` : esc(r.message)}</p>
