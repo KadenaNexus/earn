@@ -169,6 +169,8 @@ export class Worker {
      // Its own errors never stop payments or refunds.
      if(this.agent)try{await this.agent.run();}catch(error){this.agent.lastError=error.message;console.error(JSON.stringify({event:'ai_review_error',error:error.message}));}
      // Telegram alerts for games, at most once a minute; never blocks the rest of the tick.
+     // Daily Challenge and streak bonuses (reserved in escrow, then approved by the owner).
+     if(this.gamesDaily&&Date.now()-(this.dailyAt||0)>=60000){this.dailyAt=Date.now();try{await this.gamesDaily.run();}catch(error){console.error(JSON.stringify({event:'games_daily_error',error:error.message}));}}
      if(this.notifier&&Date.now()-(this.notifiedAt||0)>=60000){this.notifiedAt=Date.now();try{await this.notifier.run();}catch(error){console.error(JSON.stringify({event:'notify_error',error:error.message}));}}
      // Before deployment there is no contract to query. Saved transactions are
      // still polled above, including recovery while new writes are disabled.

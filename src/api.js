@@ -227,9 +227,12 @@ export function apiRoutes(app,db,chain,c,worker) {
    // Game rounds always use the game's own steps and server-written proof, and
    // are reviewed and paid by the AI agent (within the game limits).
    if(input.game)Object.assign(input,{category:'Games',template:'Game',steps:gameSteps(input.game),proof_schema:GAME_PROOF_SCHEMA,ai_review:true});
+   // Bonus pools (Daily Challenge, streaks): hidden from the task board, awarded by the server, approved by the owner.
+   requireValue(!(input.game&&input.bonus_kind),400,'A round is either a game or a bonus pool');
+   if(input.bonus_kind)Object.assign(input,{category:'Games',template:'Game',steps:['Awarded by Kadena Nexus Games: '+(input.bonus_kind==='challenge'?'top 3 in the Daily Challenge.':'a 7-day playing streak.')],proof_schema:GAME_PROOF_SCHEMA,ai_review:false,featured:false});
    res.json(await idempotent(req,async tx=>{
      await assertRunning(tx);const pactId=`campaign-${randomUUID()}`;
-     const row=(await tx.query(`INSERT INTO task_campaigns(pact_campaign_id,sponsor_name,sponsor_account,title,summary,category,template,steps,proof_schema,reward_kda,max_rewards,minutes_estimate,deadline,featured,ai_review,ai_criteria,game,daily_release) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,[pactId,input.sponsor_name,c.admin,input.title,input.summary,input.category,input.template,JSON.stringify(input.steps),JSON.stringify(input.proof_schema),input.reward_kda,input.max_rewards,input.minutes_estimate,input.deadline,input.featured,input.ai_review,input.ai_criteria||null,input.game||null,input.game&&input.daily_release?input.daily_release:null])).rows[0];
+     const row=(await tx.query(`INSERT INTO task_campaigns(pact_campaign_id,sponsor_name,sponsor_account,title,summary,category,template,steps,proof_schema,reward_kda,max_rewards,minutes_estimate,deadline,featured,ai_review,ai_criteria,game,daily_release,bonus_kind,hidden) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING *`,[pactId,input.sponsor_name,c.admin,input.title,input.summary,input.category,input.template,JSON.stringify(input.steps),JSON.stringify(input.proof_schema),input.reward_kda,input.max_rewards,input.minutes_estimate,input.deadline,input.featured,input.ai_review,input.ai_criteria||null,input.game||null,input.game&&input.daily_release?input.daily_release:null,input.bonus_kind||null,!!input.bonus_kind])).rows[0];
      await audit(tx,req.user.id,'create','campaign',row.id);return {campaign:taskView(row)};
    }));
  });

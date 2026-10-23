@@ -62,9 +62,9 @@ async function setup(schema, requireEmail = true) {
  assert.equal((await owner.call('/admin/ai-review', { enabled: true })).status, 200);
  let n = 0;
  async function round(game, overrides = {}) {
-   const r = await owner.call('/admin/campaigns', { title: `${GAMES[game].name} round for testing`, summary: 'Solve the puzzle and win KDA from escrow.', sponsor_name: 'Kadena Nexus Games',
+   const r = await owner.call('/admin/campaigns', { title: game ? `${GAMES[game].name} round for testing` : 'Bonus pool for testing', summary: 'Solve the puzzle and win KDA from escrow.', sponsor_name: 'Kadena Nexus Games',
      category: 'Testing', template: 'Try & Review', reward_kda: '5', max_rewards: 3, minutes_estimate: 5, deadline: new Date(Date.now() + 86400000).toISOString(),
-     steps: ['x'], proof_schema: [{ key: 'x', label: 'X', type: 'text' }], game, ...overrides }, { 'idempotency-key': 'g-create-' + (++n) });
+     steps: ['x'], proof_schema: [{ key: 'x', label: 'X', type: 'text' }], ...(game ? { game } : {}), ...overrides }, { 'idempotency-key': 'g-create-' + (++n) });
    assert.equal(r.status, 200, JSON.stringify(r.data)); const cid = r.data.campaign.id;
    const f = (await owner.call('/admin/campaigns/' + cid + '/funding-command', {})).data;
    assert.equal((await owner.call('/admin/campaigns/' + cid + '/confirm-funding', { signed_command: sign(f.command, adminKey.seed) }, { 'idempotency-key': 'g-fund-' + n })).status, 200);
@@ -511,5 +511,78 @@ test('Share a win: public win API and /win page with preview tags; Telegram aler
    await t.owner.call('/admin/telegram', { enabled: false });
    await t.db.query("UPDATE settings SET value=jsonb_set(value,'{release_day}','\"2000-01-01\"') WHERE key='telegram_cursor'");
    await t.worker.notifier.run(); assert.equal(sent.length, 0);
+ } finally { await t.close(); }
+});
+
+test('Daily Challenge, streak bonus, bonus pools and weekly leaderboard', async () => {
+ const t = await setup('ke_games_challenge', false);
+ try {
+   const players = [await client(t.base, testKey()), await client(t.base, testKey()), await client(t.base, testKey())];
+   const boards = [];
+   for (const p of players) boards.push((await p.call('/games/challenge/start', {})).data.puzzle.board.join(','));
+   assert.equal(new Set(boards).size, 1, 'everyone gets the same board today');
+   await t.db.query("UPDATE challenge_entries SET started_at=now()-interval '2 minutes'");
+   // An honest solve is ranked: undo the day's scramble (same seeded steps as the server).
+   {
+     const { challengeRand } = await import('../src/games-extra.js');
+     const { tilesSolved, tileNeighbors } = await import('../public/games-core.js');
+     const rand = challengeRand(t.c, new Date().toISOString().slice(0, 10)), b = tilesSolved(4); let gap = b.indexOf(0), prevGap = -1; const slid = [];
+     for (let i = 0; i < 80; i++) { const opts = tileNeighbors(gap, 4).filter(n => n !== prevGap); const nx = opts[Math.floor(rand() * opts.length)]; slid.push(b[nx]); [b[gap], b[nx]] = [b[nx], b[gap]]; prevGap = gap; gap = nx; }
+     assert.equal(b.join(','), boards[0], 'test reproduces the board');
+     const moves = slid.reverse(), times = moves.map((_, i) => 600 * i + (i % 5) * 70);
+     const p = await client(t.base, testKey()); await p.call('/games/challenge/start', {});
+     await t.db.query("UPDATE challenge_entries SET started_at=now()-interval '3 minutes' WHERE finished_at IS NULL AND user_id=(SELECT max(user_id) FROM challenge_entries)");
+     const ok = (await p.call('/games/challenge/finish', { play: { moves, times } })).data;
+     assert.equal(ok.solved, true, JSON.stringify(ok)); assert.equal(ok.moves, 80); assert.equal(ok.place, 1, JSON.stringify(ok));
+     await t.db.query('DELETE FROM challenge_entries WHERE user_id=(SELECT max(user_id) FROM challenge_entries)');
+   }
+   // A wrong move list is refused without using up the day.
+   const bad = await players[0].call('/games/challenge/finish', { play: { moves: [1], times: [100] } });
+   assert.equal(bad.data.solved, false); assert.equal(bad.data.retry, true);
+   // Rank by fewest moves then time (entries written directly; the board checker itself is covered by tiles tests).
+   const uid = async p => (await t.db.query("SELECT user_id FROM challenge_entries ORDER BY started_at LIMIT 1 OFFSET $1", [players.indexOf(p)])).rows[0].user_id;
+   const u0 = await uid(players[0]), u1 = await uid(players[1]), u2 = await uid(players[2]);
+   await t.db.query("UPDATE challenge_entries SET finished_at=now(),moves=60,seconds=90,flags='[]' WHERE user_id=$1", [u0]);
+   await t.db.query("UPDATE challenge_entries SET finished_at=now(),moves=50,seconds=120,flags='[]' WHERE user_id=$1", [u1]);
+   await t.db.query("UPDATE challenge_entries SET finished_at=now(),moves=40,seconds=5,flags='[\"too fast\"]' WHERE user_id=$1", [u2]);
+   const board = (await players[1].call('/games/challenge')).data;
+   assert.deepEqual(board.top.map(e => e.moves), [50, 60], 'flagged run is not ranked');
+   assert.equal(board.mine.place, 1);
+   assert.equal((await players[0].call('/games/challenge/start', {})).status, 409, 'one try per day');
+   // Fund a challenge bonus pool, then settle "yesterday".
+   const pool = await t.round(null, { bonus_kind: 'challenge', reward_kda: '3', max_rewards: 5, title: 'Daily Challenge bonus pool test' });
+   assert.ok(!(await t.owner.raw('/tasks')).data.some(x => String(x.id) === String(pool)), 'bonus pools are hidden from the task board');
+   await t.db.query("UPDATE challenge_entries SET day=day-1");
+   t.worker.dailyAt = 0; await t.ticks(4);
+   const winners = (await t.db.query('SELECT winners FROM challenge_days')).rows[0].winners;
+   assert.equal(winners.length, 2); assert.equal(winners[0].moves, 50); assert.equal(Number(winners[0].bonus_kda), 3);
+   const subs = (await t.db.query('SELECT user_id,status,proof_json FROM submissions WHERE campaign_id=$1 ORDER BY user_id', [pool])).rows;
+   assert.equal(subs.length, 2); assert.ok(subs.every(s => s.status === 'in_review'), JSON.stringify(subs.map(s => s.status)));
+   assert.match(subs.find(s => String(s.user_id) === String(u1)).proof_json.result, /#1 in the Daily Challenge/);
+   assert.equal((await t.owner.raw('/games/challenge')).data.yesterday.length, 2);
+   // Settling twice does nothing.
+   t.worker.dailyAt = 0; await t.ticks(2);
+   assert.equal((await t.db.query('SELECT count(*) n FROM submissions WHERE campaign_id=$1', [pool])).rows[0].n, '2');
+   // Streak: 7 days of finished games earns one bonus from the streak pool.
+   const streakPool = await t.round(null, { bonus_kind: 'streak', reward_kda: '2', max_rewards: 3, title: 'Streak bonus pool test' });
+   const g = await t.round('riddle');
+   for (let d = 0; d < 7; d++) await t.db.query(`INSERT INTO game_sessions(id,campaign_id,user_id,game,puzzle,secret,status,started_at,expires_at,finished_at)
+     VALUES(gen_random_uuid(),$1,$2,'riddle','{}','{}','failed',now()-make_interval(days=>$3),now(),now()-make_interval(days=>$3))`, [g, u0, d]);
+   const st = (await players[0].call('/me/streak')).data;
+   assert.equal(st.current, 7); assert.equal(st.goal, 7); assert.equal(Number(st.pool.reward), 2);
+   t.worker.dailyAt = 0; await t.ticks(4);
+   const sb = (await t.db.query('SELECT status,proof_json FROM submissions WHERE campaign_id=$1', [streakPool])).rows;
+   assert.equal(sb.length, 1); assert.match(sb[0].proof_json.result, /7 days in a row/);
+   t.worker.dailyAt = 0; await t.ticks(2);
+   assert.equal((await t.db.query('SELECT count(*) n FROM submissions WHERE campaign_id=$1', [streakPool])).rows[0].n, '1', 'one bonus per wallet per pool');
+   // The AI agent never reviews bonuses; the owner approves, and the paid bonus counts on the weekly board.
+   const sid = (await t.db.query('SELECT id FROM submissions WHERE campaign_id=$1 AND user_id=$2', [pool, u1])).rows[0].id;
+   assert.equal((await t.db.query('SELECT count(*) n FROM ai_reviews WHERE submission_id=$1', [sid])).rows[0].n, '0');
+   assert.equal((await t.owner.call('/submissions/' + sid + '/approve', {})).status, 200);
+   const pid = (await t.db.query('SELECT id FROM payouts WHERE submission_id=$1', [sid])).rows[0].id;
+   assert.equal((await t.owner.call('/admin/payouts/' + pid + '/send', {}, { 'idempotency-key': 'bonus-send-1' })).status, 200);
+   await t.ticks(4);
+   const week = (await players[1].call('/games/leaderboard')).data;
+   assert.equal(week.top[0].you, true); assert.equal(Number(week.top[0].kda), 3);
  } finally { await t.close(); }
 });
