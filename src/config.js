@@ -31,7 +31,7 @@ export function config(env = process.env) {
       maxReward: env.GAMES_MAX_REWARD_KDA || '20', dailyKda: env.GAMES_DAILY_KDA || '200',
       winsPerDay: Number(env.GAMES_WINS_PER_WALLET_PER_DAY || 1),
       // Wins per wallet per day across all games, so one player cannot sweep every round.
-      winsPerDayTotal: Number(env.GAMES_TOTAL_WINS_PER_WALLET_PER_DAY || 8),
+      winsPerDayTotal: Number(env.GAMES_TOTAL_WINS_PER_WALLET_PER_DAY || 20), // no real cap: one win per game per day is the limit
       // Off by default: the daily AI games budget caps the loss. Turn on if one person farms with many wallets.
       requireEmail: env.GAMES_REQUIRE_EMAIL === 'true', attempts: Number(env.GAMES_ATTEMPTS_PER_ROUND || 3),
     },

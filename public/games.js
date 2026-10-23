@@ -122,7 +122,7 @@ function renderLobby() {
   $('#gWins').textContent = fmt(d.stats.wins); $('#gKda').textContent = fmt(d.stats.kda);
   $('#gOpen').textContent = fmt(d.rounds.reduce((s, r) => s + Number(r.reward) * r.left, 0));
   $('#gFeed').innerHTML = d.recent.length ? d.recent.map(p => `<li><span class="who">${esc(p.who)}</span><b class="kda">${fmt(p.reward)}</b><span class="what">Won ${esc(d.games.find(g => g.id === p.game)?.name || 'a game')}</span><span class="tx">${p.tx ? `<a href="/transactions/${esc(p.tx)}?chain=1" target="_blank" rel="noopener noreferrer">${esc(short(p.tx))}</a>` : ''}</span>${p.ai ? `<a class="badge ai feed-ai" href="/ai-receipts/${esc(p.receipt)}">${ROBOT} Reviewed &amp; paid by AI agent</a>` : ''}</li>`).join('') : '<li class="empty">No wins paid yet. Be the first.</li>';
-  const total = rules.wins_per_day_total || 8;
+  const total = rules.wins_per_day_total || 20;
   $('#rulesLine').textContent = `${total >= d.games.length ? 'One win per game per day' : `One win per game, ${total} wins a day`} · ${rules.attempts} tries per round${rules.email_required ? ' · confirmed email needed' : ''}`;
   renderEmail(); renderOwner();
   $('#rounds').innerHTML = d.rounds.length ? d.rounds.map(r => `<article class="game-card">
@@ -634,7 +634,7 @@ function renderDaily() {
   else act = `<button class="btn orange" id="chPlay">${m?.active ? 'Resume today’s challenge' : 'Play today’s challenge'}</button><span class="state">One try a day · ${CHALLENGE_MIN} min</span>`;
   const rows = ch.top.slice(0, 5).map(e => `<li><span class="pl">${e.place}</span><span class="who">${esc(e.who)}</span><span>${e.moves} moves · ${clock(e.seconds * 1000)}</span></li>`).join('');
   const yest = ch.yesterday?.length ? `<p class="note">Yesterday: ${ch.yesterday.map(w => `${ord(w.place)} ${esc(w.who)}${w.bonus_kda ? ` (+${fmt(w.bonus_kda)} KDA)` : ''}`).join(' · ')}</p>` : '';
-  const streak = sk ? `<div class="g-streak"><span class="flame" aria-hidden="true">🔥</span><div><b>${sk.current}-day streak</b>${sk.played_today ? '' : ' · play today to keep it'}
+  const streak = sk ? `<div class="g-streak"><span class="flame" aria-hidden="true">🔥</span><div>${sk.current ? `<b>${sk.current}-day streak</b>${sk.played_today ? '' : ' · win a game today to keep it'}` : '<b>Start a streak</b> · win a game or solve the Daily Challenge today'}
       <p>${sk.current >= sk.goal ? (sk.pool ? `You reached ${sk.goal} days. Your ${fmt(sk.pool.reward)} KDA streak bonus is being prepared.` : `You reached ${sk.goal} days.`) : `${sk.goal - sk.current} more ${sk.goal - sk.current === 1 ? 'day' : 'days'} to ${sk.pool ? `a <b>${fmt(sk.pool.reward)} KDA</b> streak bonus` : `a ${sk.goal}-day streak`}`}</p>
       <div class="meter" aria-hidden="true"><i style="width:${Math.min(100, sk.current / sk.goal * 100)}%"></i></div></div></div>` : '';
   box.innerHTML = `<div class="panel g-challenge"><div class="gc-top"><span class="gc-icon">${ICON.tiles}</span><div><h3>Daily Challenge</h3><p>Same Sliding Tiles board for everyone today. ${prize}. New board in <span data-countdown="${esc(ch.ends_at)}">${untilText(ch.ends_at)}</span>.</p></div></div>
