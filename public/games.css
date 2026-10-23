@@ -210,3 +210,28 @@
 .k2048-pad button{width:56px;height:44px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-size:18px;cursor:pointer}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]) .k2048 .v2,:root:not([data-theme=light]) .k2048 .v4{color:#123A48}}
 :root[data-theme=dark] .k2048 .v2,:root[data-theme=dark] .k2048 .v4{color:#123A48}
+/* Weekly race: battle bar (#1 vs #2) and a race track per row */
+.g-battle{display:grid;grid-template-columns:1fr 2fr 1fr;align-items:center;gap:10px 14px;max-width:720px;margin:0 0 16px;padding:16px;border-radius:18px;background:var(--surface);border:1px solid var(--line)}
+.g-battle .side{display:flex;align-items:center;gap:8px;min-width:0;font-size:13px}
+.g-battle .side.right{justify-content:flex-end}
+.g-battle .side .who{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.g-battle .face{font-size:24px;line-height:1;white-space:nowrap;flex:none}
+.g-battle .face.chase{display:inline-block;animation:chase 1.1s ease-in-out infinite}
+.g-battle .bar{position:relative;display:block;height:16px;margin:0;gap:0;border-radius:99px;background:var(--line)}
+.g-battle .bar i{position:absolute;top:0;bottom:0;transition:width .8s ease}
+.g-battle .bar .l{left:0;background:linear-gradient(90deg,#1C637B,#4F93AA);border-radius:99px 0 0 99px}
+.g-battle .bar .r{right:0;background:linear-gradient(90deg,#EE9437,#E2710A);border-radius:0 99px 99px 0}
+.g-battle .spark{position:absolute;top:50%;transform:translate(-50%,-50%);font-size:22px;animation:spark 1.4s ease-in-out infinite;filter:drop-shadow(0 0 4px rgba(226,113,10,.6))}
+.g-battle .taunt{grid-column:1/-1;margin:0;text-align:center;font-size:14px;color:var(--muted)}
+.g-board.race li{grid-template-columns:34px 1fr auto auto;row-gap:6px}
+.g-board.race li .pl{font-size:18px}
+.g-board.race .track{grid-column:2/-1;position:relative;height:6px;border-radius:99px;background:var(--line);margin:2px 14px 4px 0}
+.g-board.race .track i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#4F93AA,#E2710A)}
+.g-board.race .track .runner{position:absolute;top:50%;transform:translate(-50%,-55%);font-size:16px;line-height:1}
+.g-board.race .track .runner.flip{transform:translate(-50%,-55%) scaleX(-1)}
+.g-board.race li:not(:first-child) .runner{animation:bob 1.6s ease-in-out infinite}
+@keyframes chase{0%,100%{transform:translateX(0)}50%{transform:translateX(-6px)}}
+@keyframes spark{0%,100%{transform:translate(-50%,-50%) scale(1)}50%{transform:translate(-50%,-62%) scale(1.15)}}
+@keyframes bob{0%,100%{transform:translate(-50%,-55%)}50%{transform:translate(-50%,-80%)}}
+@media (max-width:560px){.g-battle{grid-template-columns:1fr 1fr}.g-battle .bar{grid-column:1/-1;order:3}.g-battle .taunt{order:4}}
+@media (prefers-reduced-motion:reduce){.g-battle .face.chase,.g-battle .spark,.g-board.race .runner{animation:none!important}}

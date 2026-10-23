@@ -217,12 +217,12 @@ export function extraRoutes(app, db, chain, c) {
 
   // This week's top players (since Monday 00:00 UTC), by KDA won in games and bonuses.
   app.get('/api/games/leaderboard', async (req, res) => {
-    const rows = (await db.query(`SELECT u.kadena_account, count(*) FILTER (WHERE c.game IS NOT NULL) wins, sum(p.amount_kda) kda
+    const rows = (await db.query(`SELECT u.kadena_account, count(*) FILTER (WHERE c.game IS NOT NULL) wins, sum(p.amount_kda) kda, bool_or(p.paid_at>now()-interval '24 hours') hot
       FROM payouts p JOIN submissions s ON s.id=p.submission_id JOIN task_campaigns c ON c.id=s.campaign_id JOIN users u ON u.id=s.user_id
       WHERE p.status='confirmed' AND (c.game IS NOT NULL OR c.bonus_kind IS NOT NULL) AND p.paid_at>=date_trunc('week', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
       GROUP BY u.kadena_account ORDER BY sum(p.amount_kda) DESC, count(*) DESC LIMIT 10`)).rows;
     const mine = req.user?.kadena_account;
     res.json({ since: new Date(new Date().setUTCHours(0, 0, 0, 0) - ((new Date().getUTCDay() + 6) % 7) * 86400000).toISOString(),
-      top: rows.map((r, i) => ({ place: i + 1, who: short(r.kadena_account), wins: Number(r.wins), kda: r.kda, you: r.kadena_account === mine })) });
+      top: rows.map((r, i) => ({ place: i + 1, who: short(r.kadena_account), wins: Number(r.wins), kda: r.kda, hot: !!r.hot, you: r.kadena_account === mine })) });
   });
 }
