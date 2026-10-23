@@ -197,3 +197,16 @@
 .bank-status{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 12px}
 .bank-status span{font-size:13px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:var(--bg)}
 .bank-status span.ok{border-color:var(--teal);color:var(--teal-text)}
+/* Expert rounds */
+.badge.expert,.g-pill.expert{background:color-mix(in srgb,var(--orange) 18%,transparent);color:var(--orange-text);border-color:transparent;font-size:12px;vertical-align:middle}
+/* Kadena 2048 */
+.k2048{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;max-width:380px;margin:0 auto;padding:8px;border-radius:14px;background:var(--surface-2);touch-action:none;user-select:none}
+.k2048 .t{aspect-ratio:1;border-radius:10px;display:grid;place-items:center;font:800 clamp(18px,6vw,30px) var(--display);background:var(--surface);color:var(--ink)}
+.k2048 .v2{background:#E6EEF1}.k2048 .v4{background:#D3E3E9}.k2048 .v8{background:#A9CBD7}.k2048 .v16{background:#7FB1C3}
+.k2048 .v32{background:#4F93AA;color:#fff}.k2048 .v64{background:#1C637B;color:#fff}.k2048 .v128{background:#F4B26B}.k2048 .v256{background:#EE9437;color:#123A48}
+.k2048 .v512,.k2048 .v1024,.k2048 .v2048,.k2048 .v4096{background:var(--orange);color:#123A48;font-size:clamp(14px,4.6vw,24px)}
+.k2048-pad{display:flex;flex-direction:column;align-items:center;gap:6px;margin:14px auto 0}
+.k2048-pad div{display:flex;gap:6px}
+.k2048-pad button{width:56px;height:44px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-size:18px;cursor:pointer}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]) .k2048 .v2,:root:not([data-theme=light]) .k2048 .v4{color:#123A48}}
+:root[data-theme=dark] .k2048 .v2,:root[data-theme=dark] .k2048 .v4{color:#123A48}

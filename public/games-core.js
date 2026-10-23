@@ -191,3 +191,30 @@ export function minesReveal(mines, revealed, i, { w, h } = MINES) {
   for (const [k] of opened) revealed.push(k);
   return { opened, solved: revealed.length === w * h - mines.length };
 }
+
+// ---------- Kadena 2048 ----------
+// 4×4 board, row by row; 0 is empty. Slide in a direction: equal tiles that meet merge once.
+export const K2048 = { size: 4, target: 512 };
+const lineSlide = line => {
+  const v = line.filter(Boolean), out = []; let gained = 0;
+  for (let i = 0; i < v.length; i++) { if (v[i] === v[i + 1]) { out.push(v[i] * 2); gained += v[i] * 2; i++; } else out.push(v[i]); }
+  while (out.length < line.length) out.push(0);
+  return { out, gained };
+};
+export function k2048Slide(board, dir, size = K2048.size) {
+  const next = [...board]; let gained = 0;
+  for (let k = 0; k < size; k++) {
+    const idx = [...Array(size).keys()].map(j => dir === 'left' ? k * size + j : dir === 'right' ? k * size + (size - 1 - j) : dir === 'up' ? j * size + k : (size - 1 - j) * size + k);
+    const r = lineSlide(idx.map(i => board[i])); gained += r.gained;
+    idx.forEach((i, j) => { next[i] = r.out[j]; });
+  }
+  return { board: next, moved: next.some((v, i) => v !== board[i]), gained };
+}
+export function k2048Spawn(board, rand) {
+  const empty = board.map((v, i) => v ? -1 : i).filter(i => i >= 0);
+  if (!empty.length) return board;
+  const next = [...board]; next[empty[Math.floor(rand() * empty.length)]] = rand() < 0.9 ? 2 : 4;
+  return next;
+}
+export const k2048CanMove = board => ['left', 'right', 'up', 'down'].some(d => k2048Slide(board, d).moved);
+export function k2048New(rand) { return k2048Spawn(k2048Spawn(Array(16).fill(0), rand), rand); }

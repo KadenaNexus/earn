@@ -17,7 +17,7 @@ import { quote } from './pact.js';
 import { requireValue } from './validation.js';
 import { enqueue, pauseState } from './jobs.js';
 import { campaignQuery, taskView } from './api.js';
-import { GAMES, GAME_KINDS, INTERACTIVE, newRound, checkRound, moveRound, publicState } from './games.js';
+import { GAMES, GAME_KINDS, INTERACTIVE, newRound, checkRound, moveRound, publicState, roundMinutes } from './games.js';
 import { telegramSettings, saveTelegram, telegramSender } from './notify.js';
 import { KINDS, BUILT_IN, loadBanks, validateBank, clearBankCache } from './game-bank.js';
 
@@ -45,7 +45,7 @@ export function resendSender(mail, fetchImpl = fetch) {
 }
 
 const sessionView = (s, attemptsLeft) => ({ id: s.id, campaign_id: Number(s.campaign_id), game: s.game, puzzle: s.puzzle, state: publicState(s.game, s.secret, s.state), started_at: s.started_at, expires_at: s.expires_at, status: s.status, attempts_left: attemptsLeft });
-const roundView = r => ({ ...taskView(r), game: r.game, game_name: GAMES[r.game]?.name, minutes: GAMES[r.game]?.minutes });
+const roundView = r => ({ ...taskView(r), game: r.game, game_name: GAMES[r.game]?.name, minutes: roundMinutes(r.game, r.difficulty), difficulty: r.difficulty || 'normal' });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const esc = s => String(s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
@@ -276,18 +276,18 @@ export function gameRoutes(app, db, chain, c, { sendMail, sendTelegram } = {}) {
           const hours = Math.max(1, Math.ceil((Date.parse(nextRelease()) - Date.now()) / 3600000));
           requireValue(used < row.daily_release, 409, `Today's prizes in this round are taken. New prizes open in about ${hours} ${hours === 1 ? 'hour' : 'hours'}.`);
         }
-        start = (await tx.query(`INSERT INTO task_starts(campaign_id,user_id,expires_at) VALUES($1,$2,least(now()+interval '30 minutes',$3)) ON CONFLICT(campaign_id,user_id) DO UPDATE SET state='started',started_at=now(),expires_at=excluded.expires_at RETURNING *`, [cid, req.user.id, row.deadline])).rows[0];
+        start = (await tx.query(`INSERT INTO task_starts(campaign_id,user_id,expires_at) VALUES($1,$2,least(now()+make_interval(mins=>$4::int),$3)) ON CONFLICT(campaign_id,user_id) DO UPDATE SET state='started',started_at=now(),expires_at=excluded.expires_at RETURNING *`, [cid, req.user.id, row.deadline, Math.max(30, roundMinutes(row.game, row.difficulty) + 5)])).rows[0];
       } else {
         // A later try gets its full time: extend the held slot to cover it.
-        start = (await tx.query(`UPDATE task_starts SET expires_at=greatest(expires_at,least(now()+make_interval(mins=>$2::int),$3)) WHERE id=$1 RETURNING *`, [start.id, GAMES[row.game].minutes + 5, row.deadline])).rows[0];
+        start = (await tx.query(`UPDATE task_starts SET expires_at=greatest(expires_at,least(now()+make_interval(mins=>$2::int),$3)) WHERE id=$1 RETURNING *`, [start.id, roundMinutes(row.game, row.difficulty) + 5, row.deadline])).rows[0];
       }
       // Draw from the current banks, preferring items this wallet has not seen in the last 60 days.
       const { banks } = await loadBanks(tx);
       const seen = new Map((await tx.query("SELECT item_key,seen_at FROM game_seen WHERE user_id=$1 AND seen_at>now()-interval '60 days'", [req.user.id])).rows.map(r => [r.item_key, Date.parse(r.seen_at)]));
-      const round = newRound(row.game, undefined, banks, seen);
+      const round = newRound(row.game, undefined, banks, seen, row.difficulty);
       for (const k of round.keys) await tx.query('INSERT INTO game_seen(user_id,item_key) VALUES($1,$2) ON CONFLICT(user_id,item_key) DO UPDATE SET seen_at=now()', [req.user.id, k]);
       const s = (await tx.query(`INSERT INTO game_sessions(id,campaign_id,user_id,game,puzzle,secret,state,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,least(now()+make_interval(mins=>$8::int),$9)) RETURNING *`,
-        [randomUUID(), cid, req.user.id, row.game, JSON.stringify(round.puzzle), JSON.stringify(round.secret), round.state ? JSON.stringify(round.state) : null, GAMES[row.game].minutes, start.expires_at])).rows[0];
+        [randomUUID(), cid, req.user.id, row.game, JSON.stringify(round.puzzle), JSON.stringify(round.secret), round.state ? JSON.stringify(round.state) : null, roundMinutes(row.game, row.difficulty), start.expires_at])).rows[0];
       await audit(tx, req.user.id, 'game_start', 'game_session', s.id, { campaign: cid, game: row.game, attempt: used + 1 });
       return sessionView(s, c.games.attempts - used - 1);
     }));

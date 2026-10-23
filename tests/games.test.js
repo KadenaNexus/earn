@@ -645,3 +645,51 @@ test('Private question banks: owner upload replaces the public bank, items stay 
    assert.equal((await t.owner.call('/admin/games/content')).data.riddles.source, 'built-in');
  } finally { await t.close(); }
 });
+
+test('Kadena 2048 is played move by move on the server; Expert rounds are harder', async () => {
+ const t = await setup('ke_games_kd', false);
+ try {
+   const cid = await t.round('k2048');
+   const u = await client(t.base, testKey());
+   const s = (await u.call('/games/' + cid + '/play', {})).data;
+   assert.equal(s.puzzle.target, 512); assert.equal(s.state.board.filter(Boolean).length, 2);
+   assert.equal((await u.call('/games/sessions/' + s.id + '/move', { move: { dir: 'sideways' } })).status, 400);
+   // Put a 256+256 pair on the board (server state), then a real swipe merges them into 512 and wins.
+   await t.db.query("UPDATE game_sessions SET started_at=now()-interval '4 minutes', state=jsonb_set(state,'{board}','[256,256,0,0,0,0,0,0,0,0,0,0,0,0,2,0]') WHERE id=$1", [s.id]);
+   await t.db.query("UPDATE game_sessions SET state=jsonb_set(state,'{moves}','60') WHERE id=$1", [s.id]);
+   const m = (await u.call('/games/sessions/' + s.id + '/move', { move: { dir: 'left' } })).data;
+   assert.equal(m.board[0], 512); assert.equal(m.solved, true); assert.equal(m.board.filter(Boolean).length, 3, 'a new tile was added by the server');
+   const w = (await u.call('/games/sessions/' + s.id + '/finish', { play: {} })).data;
+   assert.equal(w.solved, true, JSON.stringify(w)); assert.match(w.summary, /Built a 512 tile/);
+   // A full board with no moves ends the try.
+   const cid2 = await t.round('k2048'); const v = await client(t.base, testKey());
+   const s2 = (await v.call('/games/' + cid2 + '/play', {})).data;
+   await t.db.query("UPDATE game_sessions SET state=jsonb_set(state,'{board}','[2,4,2,4,4,2,4,2,2,4,2,4,4,2,4,0]') WHERE id=$1", [s2.id]);
+   const lost = (await v.call('/games/sessions/' + s2.id + '/move', { move: { dir: 'right' } })).data;
+   assert.equal(typeof lost.moved, 'boolean', JSON.stringify(lost));
+   // When the server's move leaves no possible moves, the try ends.
+   const { moveRound } = await import('../src/games.js');
+   const st2 = { board: [2,4,2,4, 4,2,4,2, 2,4,2,4, 4,2,0,8], score: 0, moves: 0, times: [] };
+   const end = moveRound('k2048', { target: 512 }, st2, { dir: 'left', t: 1000 }, () => 0.5);
+   assert.equal(end.moved, true); assert.equal(end.lost, true, JSON.stringify(end));
+   // Expert: 10 mines, 5 of 5 in the quiz, 1024 in 2048 with 30 minutes, fewer logic clues.
+   const em = await t.round('mines', { difficulty: 'expert' });
+   const listed = (await t.owner.raw('/games')).data.rounds.find(r => String(r.id) === String(em));
+   assert.equal(listed.difficulty, 'expert');
+   const x = await client(t.base, testKey());
+   const ms = (await x.call('/games/' + em + '/play', {})).data; assert.equal(ms.puzzle.n, 10); assert.equal(ms.puzzle.expert, true);
+   await x.call('/games/sessions/' + ms.id + '/move', { move: { cell: 27 } });
+   assert.equal((await t.secret(ms.id)).secret.mines.length, 10);
+   const ek = await t.round('k2048', { difficulty: 'expert' });
+   assert.equal((await t.owner.raw('/games')).data.rounds.find(r => String(r.id) === String(ek)).minutes, 30);
+   const ks = (await x.call('/games/' + ek + '/play', {})).data; assert.equal(ks.puzzle.target, 1024);
+   assert.ok(Date.parse(ks.expires_at) - Date.now() > 25 * 60000, 'expert 2048 gets its 30 minutes');
+   const { checkRound, newRound } = await import('../src/games.js');
+   const q = newRound('quiz', undefined, undefined, undefined, 'expert');
+   const four = q.secret.answers.map((a, i) => i === 0 ? (a + 1) % 4 : a);
+   assert.equal(checkRound('quiz', q.puzzle, q.secret, { choices: four, written: 'A long enough written answer here.' }, 120).solved, false);
+   assert.equal(checkRound('quiz', q.puzzle, q.secret, { choices: q.secret.answers, written: 'A long enough written answer here.' }, 120).solved, true);
+   const clues = g => g.puzzle.givens.filter(Boolean).length;
+   assert.ok(clues(newRound('logic', undefined, undefined, undefined, 'expert')) <= clues(newRound('logic')) + 2);
+ } finally { await t.close(); }
+});
