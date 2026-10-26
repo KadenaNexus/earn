@@ -607,6 +607,12 @@ test('Daily Challenge, streak bonus, bonus pools and weekly leaderboard', async 
    await t.ticks(4);
    const week = (await players[1].call('/games/leaderboard')).data;
    assert.equal(week.top[0].you, true); assert.equal(Number(week.top[0].kda), 3);
+   assert.deepEqual(week.last, [], 'nothing won last week yet');
+   // A new week: this week's board starts empty and last week's top players are shown instead.
+   await t.db.query("UPDATE payouts SET paid_at=paid_at-interval '7 days' WHERE status='confirmed'");
+   const next = (await players[1].call('/games/leaderboard')).data;
+   assert.equal(next.top.length, 0);
+   assert.equal(next.last[0].you, true); assert.equal(Number(next.last[0].kda), 3); assert.equal(next.last[0].hot, false);
  } finally { await t.close(); }
 });
 

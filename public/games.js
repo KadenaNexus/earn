@@ -665,7 +665,16 @@ async function finishChallenge(st) {
 }
 function renderWeekly() {
   const box = $('#weekly'), w = state.weekly; if (!box) return;
-  if (!w?.top.length) { box.innerHTML = ''; return; }
+  if (!w) { box.innerHTML = ''; return; }
+  const medals = ['🥇', '🥈', '🥉'];
+  if (!w.top.length) {
+    // A new week (Monday 00:00 UTC) starts empty: keep the board, invite the first win, show last week's podium.
+    const last = w.last || [];
+    box.innerHTML = `<div class="pagehead"><div><h2>This week’s top players</h2><p>A new week started Monday (00:00 UTC). No wins yet: win any game to take the crown 👑</p></div></div>
+      <ol class="g-board wide race g-empty-week"><li><span class="pl">👑</span><span class="who">Your wallet here?</span><span>0 wins</span><b class="kda">${fmt(0)}</b><span class="track" aria-hidden="true"><i style="width:4%"></i></span></li></ol>
+      ${last.length ? `<div class="g-last-week"><h3>Last week’s champions</h3><ol>${last.map((e, i) => `<li><span>${medals[i]}</span><span class="who">${esc(e.who)}${e.you ? ' (you)' : ''}</span><span>${e.wins} ${e.wins === 1 ? 'win' : 'wins'}</span><b class="kda">${fmt(e.kda)}</b></li>`).join('')}</ol></div>` : ''}`;
+    return;
+  }
   const lead = Number(w.top[0].kda) || 1, medal = ['🥇', '🥈', '🥉'];
   // TikTok-style battle bar between #1 and #2, and a little race track on every row.
   const [a, b] = w.top, battle = b ? (() => {

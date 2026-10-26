@@ -250,3 +250,4 @@
 .g-duo .g-battle{grid-template-columns:1fr 1fr}
 .g-duo .g-battle .bar{grid-column:1/-1;order:3}
 .g-duo .g-battle .taunt{order:4}
+.g-last-week{margin:14px 0 0}.g-last-week h3{font-size:15px;margin:0 0 6px}.g-last-week ol{list-style:none;margin:0;padding:0;display:grid;gap:4px}.g-last-week li{display:grid;grid-template-columns:28px 1fr auto auto;gap:10px;align-items:center;font-size:14px;color:var(--muted)}.g-last-week .who{font-family:var(--mono,ui-monospace,monospace);color:var(--text,inherit);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.g-empty-week li{opacity:.75}

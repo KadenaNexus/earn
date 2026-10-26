@@ -215,14 +215,19 @@ export function extraRoutes(app, db, chain, c) {
     res.json({ ...s, goal: STREAK_DAYS, pool: (await pools()).streak, bonuses });
   });
 
-  // This week's top players (since Monday 00:00 UTC), by KDA won in games and bonuses.
-  app.get('/api/games/leaderboard', async (req, res) => {
-    const rows = (await db.query(`SELECT u.kadena_account, count(*) FILTER (WHERE c.game IS NOT NULL) wins, sum(p.amount_kda) kda, bool_or(p.paid_at>now()-interval '24 hours') hot
+  // This week's top players (since Monday 00:00 UTC), by KDA won in games and bonuses, and last week's top 3
+  // (shown while the new week has no wins yet, so the board never just disappears on Monday).
+  const weekTop = (from, to, limit) => db.query(`SELECT u.kadena_account, count(*) FILTER (WHERE c.game IS NOT NULL) wins, sum(p.amount_kda) kda, bool_or(p.paid_at>now()-interval '24 hours') hot
       FROM payouts p JOIN submissions s ON s.id=p.submission_id JOIN task_campaigns c ON c.id=s.campaign_id JOIN users u ON u.id=s.user_id
-      WHERE p.status='confirmed' AND (c.game IS NOT NULL OR c.bonus_kind IS NOT NULL) AND p.paid_at>=date_trunc('week', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
-      GROUP BY u.kadena_account ORDER BY sum(p.amount_kda) DESC, count(*) DESC LIMIT 10`)).rows;
+      WHERE p.status='confirmed' AND (c.game IS NOT NULL OR c.bonus_kind IS NOT NULL)
+        AND p.paid_at>=(date_trunc('week', now() AT TIME ZONE 'UTC') - make_interval(days => $1::int)) AT TIME ZONE 'UTC'
+        AND p.paid_at<(date_trunc('week', now() AT TIME ZONE 'UTC') - make_interval(days => $2::int)) AT TIME ZONE 'UTC'
+      GROUP BY u.kadena_account ORDER BY sum(p.amount_kda) DESC, count(*) DESC LIMIT $3`, [from, to, limit]).then((r) => r.rows);
+  app.get('/api/games/leaderboard', async (req, res) => {
+    const [rows, prev] = await Promise.all([weekTop(0, -7, 10), weekTop(7, 0, 3)]);
     const mine = req.user?.kadena_account;
+    const view = (r, i) => ({ place: i + 1, who: short(r.kadena_account), wins: Number(r.wins), kda: r.kda, hot: !!r.hot, you: r.kadena_account === mine });
     res.json({ since: new Date(new Date().setUTCHours(0, 0, 0, 0) - ((new Date().getUTCDay() + 6) % 7) * 86400000).toISOString(),
-      top: rows.map((r, i) => ({ place: i + 1, who: short(r.kadena_account), wins: Number(r.wins), kda: r.kda, hot: !!r.hot, you: r.kadena_account === mine })) });
+      top: rows.map(view), last: prev.map((r, i) => ({ ...view(r, i), hot: false })) });
   });
 }
