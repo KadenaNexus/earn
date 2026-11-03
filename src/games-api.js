@@ -111,7 +111,7 @@ export function gameRoutes(app, db, chain, c, { sendMail, sendTelegram } = {}) {
 <title>${esc(title)}</title><meta name="description" content="${esc(desc)}">
 <meta property="og:type" content="website"><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(desc)}"><meta property="og:url" content="${esc(url)}"><meta property="og:image" content="${esc(img)}">
 <meta name="twitter:card" content="summary_large_image"><meta name="twitter:site" content="@KadenaNexus"><meta name="twitter:title" content="${esc(title)}"><meta name="twitter:description" content="${esc(desc)}"><meta name="twitter:image" content="${esc(img)}">
-<link rel="icon" href="/favicon.svg"><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/games.css"><script src="/theme.js"></script></head>
+<link rel="icon" href="/games-favicon.ico?v=1" sizes="any"><link rel="icon" type="image/svg+xml" href="/games-icon.svg?v=1"><link rel="apple-touch-icon" href="/games-apple-touch-icon.png?v=1"><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/games.css"><script src="/theme.js"></script></head>
 <body><main class="wrap win-page">${w ? `<p class="note">Kadena Nexus Games · Confirmed on Chainweb</p><h1>${esc(w.who)} won <span class="kda lg">${esc(Number(w.reward))}</span> KDA</h1>
 <p class="win-game">${esc(w.game_name)}: ${esc(w.result)}</p>
 <p>${w.ai ? 'Reviewed and paid by the AI agent' : 'Paid'} from on-chain escrow, ${esc(new Date(w.paid_at).toUTCString().replace(' GMT', ' UTC'))}.</p>
