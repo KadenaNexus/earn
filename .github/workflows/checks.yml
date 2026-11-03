@@ -17,8 +17,8 @@ jobs:
     env:
       TEST_DATABASE_URL: postgres://kadena_earn:local_test_only@127.0.0.1:55432/kadena_earn
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24'
           cache: npm
@@ -28,5 +28,8 @@ jobs:
         run: |
           mkdir -p .local
           curl -fsSL https://github.com/kadena-io/pact-5/releases/download/5.4/pact-5.4-linux-x64.tar.gz -o .local/pact.tgz
+          # The release publishes no checksum file; this is the SHA-256 of the 5.4 asset as downloaded Nov 3, 2026.
+          # If the asset ever changes, this step fails instead of running an unknown binary.
+          echo "251328d16af41388afbaf659ff484973f80119347df42d4491ea174ee6c3469d  .local/pact.tgz" | sha256sum -c -
           tar xzf .local/pact.tgz -C .local
       - run: npm run test:pact
