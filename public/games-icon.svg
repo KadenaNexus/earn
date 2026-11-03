@@ -1,0 +1,8 @@
+<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1F7590"/><stop offset="1" stop-color="#0D3A49"/></linearGradient><linearGradient id="or" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F59A3E"/><stop offset="1" stop-color="#D9640A"/></linearGradient></defs>
+<rect width="1024" height="1024" rx="230" fill="url(#bg)"/><circle cx="512" cy="512" r="370" fill="#fff" opacity=".08"/>
+<path d="M330 360 H694 C800 360 850 450 866 560 C884 690 840 760 780 760 C720 760 690 690 640 640 H384 C334 690 304 760 244 760 C184 760 140 690 158 560 C174 450 224 360 330 360 Z" fill="#A84F06" transform="translate(0,16)"/>
+<path d="M330 360 H694 C800 360 850 450 866 560 C884 690 840 760 780 760 C720 760 690 690 640 640 H384 C334 690 304 760 244 760 C184 760 140 690 158 560 C174 450 224 360 330 360 Z" fill="url(#or)"/>
+<g fill="#fff"><rect x="262" y="478" width="148" height="44" rx="22"/><rect x="314" y="426" width="44" height="148" rx="22"/></g>
+<circle cx="690" cy="452" r="34" fill="#fff"/><circle cx="756" cy="520" r="34" fill="#fff"/><circle cx="624" cy="520" r="34" fill="#37B3CF"/><circle cx="690" cy="588" r="34" fill="#37B3CF"/>
+<circle cx="512" cy="470" r="52" fill="#0D3A49" opacity=".9"/><text x="512" y="472" text-anchor="middle" dominant-baseline="central" font-family="Arial Black,Arial" font-weight="900" font-size="64" fill="#F59A3E">K</text>
+</svg>
