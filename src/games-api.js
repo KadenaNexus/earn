@@ -120,6 +120,33 @@ export function gameRoutes(app, db, chain, c, { sendMail, sendTelegram } = {}) {
 <p><a class="btn orange" href="/games.html">Play Kadena Nexus Games</a></p></main></body></html>`);
   });
 
+  // Owner: which games people play and win, all-time and last 7 days.
+  app.get('/api/admin/games/stats', admin(c), async (req, res) => {
+    const plays = (await db.query(`SELECT game,
+        count(*) plays, count(DISTINCT user_id) players,
+        count(*) FILTER (WHERE started_at>now()-interval '7 days') plays_7d,
+        count(DISTINCT user_id) FILTER (WHERE started_at>now()-interval '7 days') players_7d,
+        max(started_at) last_played
+      FROM game_sessions GROUP BY game`)).rows;
+    const wins = (await db.query(`SELECT c.game,
+        count(*) wins, coalesce(sum(p.amount_kda),0) kda,
+        count(*) FILTER (WHERE p.paid_at>now()-interval '7 days') wins_7d,
+        coalesce(sum(p.amount_kda) FILTER (WHERE p.paid_at>now()-interval '7 days'),0) kda_7d
+      FROM payouts p JOIN submissions s ON s.id=p.submission_id JOIN task_campaigns c ON c.id=s.campaign_id
+      WHERE p.status='confirmed' AND c.game IS NOT NULL GROUP BY c.game`)).rows;
+    const open = (await db.query(`SELECT game, count(*) rounds FROM task_campaigns
+      WHERE status='open' AND game IS NOT NULL AND deadline>now() GROUP BY game`)).rows;
+    const by = (rows, k) => Object.fromEntries(rows.map(r => [r.game, r]))[k] || {};
+    const n = v => Number(v || 0);
+    const games = GAME_KINDS.map(k => {
+      const p = by(plays, k), w = by(wins, k);
+      return { id: k, name: GAMES[k].name, plays: n(p.plays), players: n(p.players), wins: n(w.wins), kda: n(w.kda),
+        plays_7d: n(p.plays_7d), players_7d: n(p.players_7d), wins_7d: n(w.wins_7d), kda_7d: n(w.kda_7d),
+        last_played: p.last_played || null, open_rounds: n(by(open, k).rounds) };
+    }).sort((a, b) => b.plays - a.plays || b.wins - a.wins);
+    res.json({ games });
+  });
+
   // Owner: private question banks. Counts only; the items themselves are never sent back.
   app.get('/api/admin/games/content', admin(c), async (req, res) => {
     const { banks, custom } = await loadBanks(db);
