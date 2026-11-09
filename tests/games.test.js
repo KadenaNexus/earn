@@ -733,3 +733,31 @@ test('Telegram digest: at most 1–3 summary posts a day, at fixed hours, only w
    assert.equal(sent.length, 1, sent.slice(1).join('\n'));
  } finally { await t.close(); }
 });
+
+test('Owner game stats: plays, players, wins and KDA per game, all-time and last 7 days', async () => {
+ const t = await setup('ke_games_stats');
+ try {
+   const cid = await t.round('logic');
+   const p = await t.player('stats.one@gmail.com');
+   const s = (await p.call('/games/' + cid + '/play', {})).data;
+   const { secret: sec, puzzle } = await t.secret(s.id);
+   await t.db.query("UPDATE game_sessions SET started_at=now()-interval '3 minutes' WHERE id=$1", [s.id]);
+   const win = await p.call('/games/sessions/' + s.id + '/finish', { play: { grid: sec.solution, entries: puzzle.givens.filter(v => !v).length + 4 } });
+   assert.equal(win.data.solved, true);
+   await t.ticks(4);
+   // An older play from another wallet, outside the 7-day window.
+   const q = await t.player('stats.two@gmail.com');
+   const s2 = (await q.call('/games/' + cid + '/play', {})).data;
+   await t.db.query("UPDATE game_sessions SET started_at=now()-interval '10 days' WHERE id=$1", [s2.id]);
+
+   assert.equal((await p.call('/admin/games/stats')).status, 403, 'owner only');
+   const { games } = (await t.owner.call('/admin/games/stats')).data;
+   assert.equal(games.length, 9);
+   const logic = games[0];
+   assert.equal(logic.id, 'logic', 'most played first');
+   assert.equal(logic.plays, 2); assert.equal(logic.players, 2); assert.equal(logic.plays_7d, 1); assert.equal(logic.players_7d, 1);
+   assert.equal(logic.wins, 1); assert.equal(logic.wins_7d, 1); assert.equal(logic.kda, 5); assert.equal(logic.open_rounds, 1);
+   const tiles = games.find(g => g.id === 'tiles');
+   assert.deepEqual([tiles.plays, tiles.wins, tiles.kda, tiles.last_played], [0, 0, 0, null]);
+ } finally { await t.close(); }
+});

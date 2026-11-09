@@ -178,6 +178,11 @@ function renderOwner() {
         <div class="field"><label for="bCount">Number of bonuses</label><input id="bCount" type="number" min="1" max="1000" value="21"></div>
         <button class="btn" id="bGo">Fund bonus pool</button></div><p id="bNote"></p>
     </details>
+    <details class="g-refill" id="oStats"><summary>Game stats (which games people play)</summary>
+      <div class="g-period"><button class="sm on" data-per="all">All time</button><button class="sm" data-per="7d">Last 7 days</button></div>
+      <div id="statsTable"><p>Loading…</p></div>
+      <p class="note">Plays are rounds started (won or not). Players are different wallets. Sorted by plays.</p>
+    </details>
     <details class="g-refill" id="oBank"><summary>Question banks (private)</summary>
       <p>The built-in questions are public on GitHub. Upload a private bank file (JSON with any of: quiz, written, riddles, words, pactbugs) to replace them. Items are never shown back here, and each wallet is shown questions it has not seen first.</p>
       <div id="bankStatus" class="bank-status"></div>
@@ -216,6 +221,8 @@ function renderOwner() {
     $('#bankNote').textContent = `Uploaded: ${Object.entries(r).map(([k, v]) => `${k} ${v}`).join(', ')}. New rounds use them right away.`; $('#bankFile').value = '';
     await bankStatus();
   });
+  $('#oStats').ontoggle = () => { if ($('#oStats').open) loadStats(); };
+  $$('[data-per]').forEach(b => b.onclick = () => { $$('[data-per]').forEach(x => x.classList.toggle('on', x === b)); renderStats(b.dataset.per); });
   $('#oTg').ontoggle = async () => {
     if (!$('#oTg').open || $('#oTg').dataset.loaded) return; $('#oTg').dataset.loaded = '1';
     try { const t = await api('/admin/telegram'); $('#tgChat').value = t.chat; $('#tgOn').checked = t.enabled; $('#tgMode').value = t.mode === 'every' ? 'every' : String(t.per_day || 2); $('#tgNote').textContent = t.token_set ? 'A bot token is saved. Leave the token empty to keep it.' : 'No bot token saved yet.'; } catch (e) { $('#tgNote').textContent = e.message; }
@@ -239,6 +246,25 @@ function renderReleaseEditor() {
     await api(`/admin/games/${b.dataset.rel}/daily-release`, { daily_release: v });
     notify(v ? `Saved: ${v} prizes per day.` : 'Saved: all prizes open at once.'); await load(); renderReleaseEditor();
   }));
+}
+let statsData = null;
+async function loadStats() {
+  try { statsData = (await api('/admin/games/stats')).games; renderStats($('[data-per].on')?.dataset.per || 'all'); }
+  catch (e) { $('#statsTable').innerHTML = `<p>${esc(e.message || 'Could not load stats.')}</p>`; }
+}
+function renderStats(per) {
+  if (!statsData) return;
+  const w = per === '7d' ? '_7d' : '';
+  const rows = [...statsData].sort((a, b) => b['plays' + w] - a['plays' + w] || b['wins' + w] - a['wins' + w]);
+  const top = rows[0]?.['plays' + w] || 0;
+  const ago = t => { if (!t) return 'never'; const d = Math.floor((Date.now() - new Date(t)) / 86400000); return d < 1 ? 'today' : d === 1 ? 'yesterday' : `${d} days ago`; };
+  const tot = k => rows.reduce((s, r) => s + r[k + w], 0);
+  $('#statsTable').innerHTML = `<div class="g-stats-wrap"><table class="g-stats"><thead><tr><th>Game</th><th>Plays</th><th>Players</th><th>Wins</th><th>KDA paid</th><th>Win rate</th><th>Last played</th><th>Open</th></tr></thead><tbody>
+    ${rows.map((r, i) => `<tr><td>${i === 0 && top ? '🏆 ' : ''}${esc(r.name)}<span class="g-bar" style="width:${top ? Math.round(100 * r['plays' + w] / top) : 0}%"></span></td>
+      <td>${r['plays' + w]}</td><td>${r['players' + w]}</td><td>${r['wins' + w]}</td><td>${fmt(r['kda' + w])}</td>
+      <td>${r['plays' + w] ? Math.round(100 * r['wins' + w] / r['plays' + w]) + '%' : '–'}</td><td>${ago(r.last_played)}</td>
+      <td>${r.open_rounds ? r.open_rounds : '<span class="g-empty">empty</span>'}</td></tr>`).join('')}
+    </tbody><tfoot><tr><td>Total</td><td>${tot('plays')}</td><td></td><td>${tot('wins')}</td><td>${fmt(tot('kda'))}</td><td></td><td></td><td></td></tr></tfoot></table></div>`;
 }
 async function refillAll() {
   const empty = state.data.games.filter(g => !state.data.rounds.some(r => r.game === g.id && r.left > 0));
