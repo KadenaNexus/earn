@@ -192,6 +192,7 @@ ul.proof li::before{content:"";width:16px;height:16px;border-radius:4px;border:1
 .ledger span{display:block;font-size:12px;color:var(--muted)}
 .ledger b{font:700 17px var(--display)}
 .note{font-size:13px;color:var(--muted);margin-top:8px}
+#networkLabel{min-height:1.55em} /* holds the line before app.js fills it, so the hero does not shift */
 .drawer footer{padding:16px 22px;border-top:1px solid var(--line);background:var(--bg)}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:12px;padding:13px 18px;font-weight:600;font-size:15px;background:var(--teal);color:var(--teal-ink);width:100%}
 .btn[disabled]{opacity:.45;cursor:not-allowed}
