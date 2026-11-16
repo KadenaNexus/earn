@@ -60,7 +60,7 @@ $$('[data-go]').forEach(b=>b.onclick=()=>action(null,()=>go(b.dataset.go)));
 $('.brand').onclick=e=>{e.preventDefault();go('explore');};
 $('#themeBtn').onclick=()=>{const r=document.documentElement;r.dataset.theme=(r.dataset.theme|| (matchMedia('(prefers-color-scheme:light)').matches?'light':'dark'))==='light'?'dark':'light';localStorage.setItem('ke-theme',r.dataset.theme);};
 try{const t=localStorage.getItem('ke-theme');if(['dark','light'].includes(t))document.documentElement.dataset.theme=t;}catch{}
-const categories=['All','Testing','Ecosystem','Social','Community'];
+const categories=['All','Testing','Ecosystem','Social','Community','Community & Growth','Listing'];
 $('#chips').innerHTML=categories.map(c=>`<button class="chip" aria-pressed="${c==='All'}" data-category="${c}">${c==='All'?'All tasks':c}</button>`).join('');
 $('#chips').onclick=e=>{const b=e.target.closest('[data-category]');if(b){state.category=b.dataset.category;$$('#chips button').forEach(x=>x.setAttribute('aria-pressed',x===b));renderTasks();}};
 $('#q').oninput=renderTasks;$('#sort').onchange=renderTasks;
@@ -106,7 +106,7 @@ $('#doneChips').innerHTML=categories.map(c=>`<button class="chip" aria-pressed="
 $('#doneChips').onclick=e=>{const b=e.target.closest('[data-done]');if(b){state.doneFilter=b.dataset.done;$$('#doneChips button').forEach(x=>x.setAttribute('aria-pressed',x===b));renderWork();}};$('#doneQ').oninput=renderWork;
 function renderWork(){const q=$('#doneQ').value.toLowerCase();const rows=state.work.filter(w=>(state.doneFilter==='All'||w.cat===state.doneFilter)&&(!q||(w.t+w.f+w.by+w.sp).toLowerCase().includes(q)));$('#log').innerHTML=rows.length?rows.map(w=>`<li><div class="logdate">${new Date(w.d).toLocaleDateString()}</div><div><h3>${esc(w.t)}</h3><p class="status-note">${esc(w.f)}</p><div class="time">${esc(w.by)} · ${esc(w.sp)} · ${esc(w.cat)}${w.ai?` · <a class="badge ai" href="/ai-receipts/${esc(w.receipt)}" title="See the AI review receipt">Reviewed &amp; paid by AI agent</a>`:''}</div><div>${w.links.map(([label,url])=>link(label,url)).join(' · ')} ${txLink(w.tx)}</div></div><b class="kda">${fmt(w.r)}</b></li>`).join(''):'<li class="empty">Paid work will appear here automatically.</li>';}
 
-const templates=[['Try & Review','Testing'],['Fix the Ecosystem','Ecosystem'],['Discover & List','Ecosystem'],['Create & Share','Social'],['AMA','Community']];
+const templates=[['Try & Review','Testing'],['Fix the Ecosystem','Ecosystem'],['Discover & List','Ecosystem'],['Create & Share','Social'],['AMA','Community'],['Community & Growth','Community & Growth'],['Listing','Listing']];
 let selectedTemplate=0,steps=['Complete the task described above','Describe your experience and paste supporting links'],fields=[{key:'feedback',label:'Your feedback',type:'text',min_len:40,required:true,private:false},{key:'evidence',label:'Supporting link or screenshot link',type:'url',min_len:0,required:true,private:true}];
 $('#tpl').innerHTML=templates.map(([label],i)=>`<button class="chip" aria-pressed="${i===0}" data-template="${i}">${label}</button>`).join('');
 $('#tpl').onclick=e=>{const b=e.target.closest('[data-template]');if(b){selectedTemplate=Number(b.dataset.template);$$('#tpl button').forEach(x=>x.setAttribute('aria-pressed',x===b));calc();}};
