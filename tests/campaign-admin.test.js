@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { sign } from '../src/pact.js';
 import { createApp } from '../src/server.js';
 import { Worker } from '../src/jobs.js';
-import { campaignEditSchema, proofSignature } from '../src/validation.js';
+import { campaignEditSchema, campaignSchema, proofSignature } from '../src/validation.js';
 import { testDatabase, testKey, testConfig, TestChain, client, campaignInput } from './helpers.js';
 
 const editable = t => ({ title: t.title, summary: t.sum, sponsor_name: t.sponsor, category: t.cat, template: t.type,
@@ -87,4 +87,10 @@ test('Owner can edit task text, lock proof fields while work is in progress, and
     const actions = (await db.query("SELECT action FROM audit_log WHERE entity_type='campaign' ORDER BY id")).rows.map(r => r.action);
     assert.ok(actions.includes('edit') && actions.includes('hide') && actions.includes('unhide'));
   } finally { server.close(); await db.close(); }
+});
+
+test('New task categories: Community & Growth and Listing are accepted, unknown ones are not', () => {
+  for (const [category, template] of [['Community & Growth', 'Community & Growth'], ['Listing', 'Listing']])
+    assert.equal(campaignSchema.safeParse({ ...campaignInput(), category, template }).success, true, category);
+  assert.equal(campaignSchema.safeParse({ ...campaignInput(), category: 'Marketing', template: 'Listing' }).success, false);
 });
